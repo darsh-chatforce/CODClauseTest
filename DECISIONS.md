@@ -1101,3 +1101,840 @@ stops at the kill.
 The reason they surfaced at all is that the art pass perturbed the conditions
 enough to turn a silent bug into an intermittent one. Nobody would have written a
 bug report for "shots are aimed one frame late".
+
+---
+
+# MILESTONE 3 — polish, post-processing, audio, and the dissection
+
+---
+
+## 26. The M3 thesis: polish is where a build stops being a demo
+
+M1 proved the game plays. M2 proved an art pass can be applied without changing
+how it plays. M3 is the milestone where the build has to survive being *looked
+at* by someone who is not grading it on effort — which is precisely the bar both
+pipeline runs failed. Neither of them failed on mechanics: v1 and v2 both
+compiled, booted, took input, spawned rigged enemies and ran live combat. Both
+scored 3/10 anyway, because a shooter is judged on its frame, and the frame was
+dominated by an unlit black blob.
+
+So M3's rule is the inverse of the usual polish rule. Polish here is not "add
+effects". It is: **every remaining thing that a person would notice in the first
+five seconds gets fixed, measured, and given an assertion so it cannot come
+back.** Three of those came from the M2 gate review, and all three are the same
+failure the dissections describe — an integration/direction failure, not an
+engine limitation.
+
+---
+
+## 27. The three gate-review fixes
+
+### 27.1 The visor telegraph was a HUD element wearing a soldier's head
+
+M2's telegraph was `BoxGeometry(0.16, 0.045, 0.03)` parented to the head bone at
+`(0, 0.05, 0.1)`, emissive at intensity 0.9 in saturated orange. In
+`shots/07_enemy_closeup.png` it read as a flat cream slab floating clear of the
+face. Three independent mistakes had stacked, and the interesting part is that
+each one is a *category* of error rather than a bad number:
+
+1. **The units were not metres.** Head-bone space is un-scaled rig space, and
+   this rig is authored at roughly 1 unit tall and then normalised to 1.8 m. So
+   "0.16 wide" was ~0.29 m and "0.1 forward" was ~0.18 m: a 29 cm signboard 18 cm
+   in front of the face. Nothing in the code said what those units were, and
+   nothing could have caught it — the number is dimensionless in the source.
+2. **It was flat.** A box across a head reads as a box across a head. A visor is
+   a *wrapped* surface, and the wrap is most of what makes it read as worn.
+3. **It was already saturated at rest.** `emissiveIntensity: 0.9` on a saturated
+   orange tone-maps to near-white through ACES, so the idle state was already
+   blown and the 400 ms wind-up had almost no headroom to brighten into. **A
+   telegraph that is always on is not a telegraph.**
+
+The rebuild answers all three. The geometry is a cylinder-segment lens (~120° of
+wrap) inside a matte housing, with a strap closing the loop round the back of the
+skull so the goggles read as worn from behind as well as from the front. It is
+authored in **real metres** and converted into bone units by a factor MEASURED
+off the head bone's own world matrix — `perUnit = |matrixWorld.column(0)|` — so it
+is head-sized on any rig at any normalisation scale. And it rests **dark**: a
+deep ember at 0.35 climbing to 4.2, a ~12× swing, with the lens (and only the
+lens) on the bloom allow-list so the wind-up reads as a light source rather than
+as a brighter surface.
+
+The general lesson, which is item 4 of the dissection: **a quantity with no unit
+in the source is a bug waiting for a coordinate-system change.** Authoring in
+world units and converting at the boundary costs one measured scalar.
+
+### 27.2 The corrugated metal was a mirror, not a material
+
+The `metal` set — perimeter panels, deck railings, stair cheeks, shipping
+containers — read as psychedelic blue/orange marble. Three causes, and none of
+them was "the texture is bad":
+
+1. **The rust was the wrong SCALE.** `fbm(SIZE, 8, 4)` puts its features at ⅛ of
+   a tile, i.e. ~11 cm blobs, then a threshold turned them into hard-edged
+   shapes. That is the orange veining.
+2. **The surface was a mirror.** Roughness floored at 0.18 under a metalness map
+   peaking at 0.95. A mirror shows you the *environment*, not the object — so the
+   panels showed the sky, and the sky was blue. This is the same defect M2 had
+   already diagnosed for the shipping containers and "fixed" with an override
+   that never executed (§31.1).
+3. **The corrugation was invisible.** It existed only in the height map, at a
+   normal strength producing ~5° of peak flank tilt. At play distance that is
+   nothing, and there was zero corrugation in the albedo, so the one cue that
+   would identify the material was carried entirely by the weakest channel.
+
+The rebake fixes each in kind. The rib pitch is derived from the actual in-game
+tiling rather than chosen: `arena.ts` uses 1.1 tiles/m, so one tile is 0.909 m,
+and real corrugated cladding runs 75–90 mm, giving **11 ribs per tile at 82.6 mm**
+— the old 16 was a 57 mm pitch, finer than any real sheet. The profile becomes a
+rounded trapezoid, the ribs are re-oriented to stand *vertically* on a wall face
+(so lap joints are horizontal and the valleys run with gravity), and the rib
+shading is baked into the **albedo** — 0.139 column-mean peak-to-peak — so the
+material survives with the normal map contributing nothing. Rust is rebuilt as
+small-scale directional streaks bled *downhill* from fixings, laps and coating
+pinholes, double-gated so it does not band along every lap row, desaturated to
+iron oxide, and held to 15.5% coverage. Roughness lands 0.60–0.91 and metalness
+peaks at 0.50.
+
+**The seam audit stayed green throughout** (worst across all materials unchanged
+at 0.892) and the other four materials were verified byte-identical by md5 before
+and after — the per-material seeded RNG from M2 §22.2 doing exactly the job it
+was added for.
+
+One process note worth keeping. The bake was iterated **against a rendered
+preview that was actually looked at**, four times. Iteration 2 measured well and
+looked properly weathered, and was wrong: every lap row had grown a continuous
+rust fringe, so at tiling distance those fringes *were* the tile period. That is
+the same failure the seam gate exists to prevent, arriving through a door the
+seam gate does not watch, and **no number in the file would have flagged it.**
+
+### 27.3 The sky measured as a sunset and rendered as noon
+
+M2 shipped `hdri_industrial_dusk`, whose sun `assetgen/sky_sun.py` measured at
+azimuth +126.0°, elevation **+2.4°** — a sun sitting on the horizon. The frame
+read as bright midday blue. This is, word for word, the verdict in the v2
+dissection about the pipeline's own build: *"the frame is a midday blue sky over
+a flat plane."* We shipped it with a measurement in hand.
+
+The reason is worth stating exactly, because "we measured it" is the trap:
+
+> A sunset plate's warmth is a **wedge** around the sun, and that wedge has a
+> **height**. `industrial_sunset_02_puresky` has a spectacular one — roughly 35°
+> wide, hugging the horizon — and everything outside it is a saturated blue
+> zenith. The measurement `elevation = +2.4°` is a **true statement about one
+> pixel.** It says nothing about the other 99.99% of the sky, which is the part
+> the player is looking at.
+
+So the replacement was chosen on a different measurement: **warm ARC coverage**,
+not brightest-pixel position. `hdri_twilight_quarry` (Poly Haven
+`drackenstein_quarry_puresky`, CC0) carries a warm tint across 100% of the
+horizon arc with a median warm-wedge height of ~23°, and a desaturated slate
+zenith instead of a cobalt one. Its per-face numbers say the same thing: the
+sun-facing face is 0.61 warm, and the anti-sun faces sit at a neutral grey-blue
+(mean RGB 0.347 / 0.373 / 0.392) rather than the previous plate's blue. **Turn
+around in this level and it still looks like evening.** The contact sheet was
+composited and looked at before installing, because the failure being fixed is
+precisely one that survives numbers.
+
+Every downstream constant was re-derived from the new plate's own pixels: fog,
+key colour, hemisphere fill, and the procedural fallback's three colours. Two of
+them are deliberately *not* straight samples, and both deserve their comment:
+
+- **`FOG_COLOR` is sampled from the shadow side of the horizon band, not its
+  mean.** The first pass took the measured horizon (#928b7b) straight and the
+  compound turned to milk — a fog colour brighter than most of the level lifts
+  every distant surface toward the sky and contrast dies first. Fog density came
+  down 0.0115 → 0.006 with it; the berm still dissolves because fog is
+  exponential in distance and the berm is 60–140 m out while the perimeter wall
+  is 28 m.
+- **`GROUND_BOUNCE_COLOR` is not sampled from the sky at all.** The plate's lower
+  hemisphere is a grey quarry lake. Our ground is warm sand over a concrete
+  apron, and the hemisphere light's ground term models light bouncing off *the
+  surface the player is standing on*, not off the surface in the photograph.
+
+The sun elevation stays raised (22°, from a measured 5.7°) for the reason M1
+established: a 6 m perimeter wall at 5.7° casts a 60 m shadow across a 40 m
+arena. But the disagreement is now much smaller and much better justified —
+against a plate whose warm wedge reaches ~23°, a 22° key is *coherent* with the
+picture rather than merely playable.
+
+---
+
+## 28. The carbine: fitted by measurement, and the assertion that proves it
+
+M2 generated the carbine and **deliberately did not ship it** (§24). The reason
+was never modelling quality; it was that this project's ADS alignment is
+*geometric* (§2.5). The aim-down-sights pose is not a hand-tuned offset that
+looks right — it is literally `x = 0, y = -SIGHT_HEIGHT`, which lands the optic on
+the screen centre **provided the optic is actually at `(0, SIGHT_HEIGHT)` in
+model space.** A generated mesh arrives at an arbitrary scale, in an arbitrary
+pose, with its origin wherever the generator put it, and none of that is
+recorded anywhere.
+
+The tempting move is to drop it in and nudge the pose until the dot looks
+centred. That is the move this whole file exists to not make: it produces a
+number nobody can defend, and it breaks silently the next time the asset is
+regenerated.
+
+So `src/weapons/carbine.ts` **measures**:
+
+1. **Scale** from the mesh's own bounding box to 0.86 m — a real short-barrelled
+   5.56 carbine with the stock collapsed.
+2. **The optic** is located by a region rule expressed in *normalised* bounding
+   box coordinates (`v > 0.80, w ∈ [0.38, 0.66]`), so the rule survives a
+   re-generation at a different scale. The optical axis is the **bounding-box
+   centre** of that region, not its vertex centroid: a red dot's tube is hollow
+   and its mount hangs below, so a centroid sits low.
+3. **The model is translated** so the measured optic centre lands on
+   `(0, SIGHT_HEIGHT)`. ADS is now correct *by construction*.
+4. **The bore** is found the same way, so the muzzle flash, the tracer origin and
+   the world flash light sit on the barrel axis rather than at the model origin.
+5. **The magazine is split out of the single generated mesh.** Tripo returns one
+   mesh with one material; there is no `magazine` node to find. Rather than
+   accept "the asset does not support a reload animation", the triangles inside
+   the magazine region are moved to a second geometry that **shares the
+   original's vertex attribute buffers** and differs only in its index — one
+   extra draw call, zero extra memory, and M1's reload (mag drops at 25%, hidden
+   through the swap, seats at 62%) keeps working with the real weapon. **777
+   triangles**, measured.
+
+Every one of those five steps is a measurement with a failure mode, so every one
+of them reports. `CarbineFit.problems` is non-empty if any region rule caught
+nothing plausible, and the caller keeps the placeholder rather than shipping a
+weapon whose optic is somewhere unknown — because a misaligned sight is a
+*gameplay* failure, not a cosmetic one.
+
+### 28.1 The assertion is the point
+
+New in `tools/smoke.mjs`:
+
+```
+[PASS] ADS puts the optic ON the crosshair (geometric, not eyeballed)
+       — optic lands 0.14 px from screen centre (NDC 0.00018, -0.00014)
+```
+
+It projects the optic's optical axis through the **real viewmodel camera in the
+real settled ADS pose** and demands it land within 2 px of the crosshair on a
+1600×900 frame. Until M3, §2.5's "geometric, not eyeballed" claim rested on the
+placeholder rifle having been *built* with its optic at `SIGHT_HEIGHT` — true,
+but circular. This is the first build in which the claim has evidence, and it is
+the assertion that fails if anyone ever "fixes" a misaligned sight by moving the
+pose.
+
+It also caught its own subtlety on first run: at 450 ms the reading was 3.32 px
+and red. The ADS pose is an exponentially-damped blend (`poseTau` 75 ms) with
+additive sway and bob on top, and at 450 ms it is still ~0.3% short of target.
+That residual is *correct* — a sight that snapped instantly would feel wrong — so
+the fix was to let the filter finish before measuring, not to widen the tolerance
+until a transient fits inside it. **Widening a tolerance to cover a real
+transient is how a gate stops meaning anything.**
+
+### 28.2 The screen budget survived the real mesh
+
+| | placeholder (M2) | generated carbine (M3) | budget |
+|---|---:|---:|---:|
+| hip | 4.45% | **5.89%** | 15% |
+| ADS | 9.24% | **8.83%** | 15% |
+
+This is the number the pipeline failed twice, at ~25%, in four separate blocking
+judge rounds. It did not need to be defended by argument here because it is a
+**rasterised measurement** — the viewmodel scene is rendered alone into a 192×108
+target and the covered pixels are counted — so a fatter mesh simply moves the
+number and the gate either passes or does not.
+
+### 28.3 The optic had no reticle in it, and the hands were derived
+
+Two things the mesh could not provide:
+
+**The reticle.** Tripo modelled the *shape* of a red dot; there is no red dot in
+it, and aiming down an empty tube is an obstruction rather than a sight picture.
+So the reticle is authored, at the measured optical axis — the one place it can
+go and still be true. It is drawn with `depthTest: false`, which is what real
+shooters do: a reticle is a projected image on the shooter's eye, not a physical
+object inside the tube, and depth-testing it against a lumpy generated housing
+means it disappears exactly when it is needed.
+
+**The hand mount.** The obvious way to seat a weapon on a hand bone is to guess
+three Euler angles and adjust against a screenshot. The first pass did exactly
+that and produced a soldier holding a carbine vertically across his chest. The
+numbers were also meaningless and would have been silently wrong on any other
+rig.
+
+Nothing about the hand bone's own axes needs to be known. What *is* known is
+where the weapon must end up — barrel down the body's forward axis, optic up — so
+the required world orientation is the model root's turned 180° about Y (the
+carbine's muzzle is its −Z; the model's forward is its +Z), and the local
+rotation is whatever takes the hand bone there:
+
+```
+holderLocal = inverse(handWorld) · (rootWorld · Ry(π))
+```
+
+Only *then* is a small deliberate cant added on top (12° muzzle-down, 5° roll),
+because a rifle held dead level looks like it is on a tripod. The big rotation is
+computed; only the small stylistic one is a number somebody chose. Correspondingly
+`buildWorldCarbine` re-origins the weapon **on its pistol grip** (found by the
+same normalised region rule), so attaching it is a matter of parenting with a
+palm offset rather than of discovering by trial the translation that happens to
+work.
+
+The hostiles carry the same weapon the player carries, and so does the
+third-person avatar. That is not a detail: a firefight in which the thing
+shooting at you is visibly holding nothing is the single most common "unfinished"
+read in a generated build, and both dissections have a version of it.
+
+---
+
+## 29. Post-processing: bloom by intent, and a measured budget
+
+### 29.1 Bloom belongs to things that EMIT light, not to things that are bright
+
+The one-line version of this feature is `UnrealBloomPass(threshold 0.85)` on the
+composited frame, and it is wrong here in a specific, expensive way. At dusk the
+brightest things in the picture are the sky and the sun-facing concrete, so a
+threshold bloom **blooms the sky**: contrast collapses, the picture goes soft,
+and the actual emitters gain nothing because they were never the brightest pixels
+in the first place. The one gameplay-critical emissive in this game is a 400 ms
+telegraph the player is meant to read at 30 m. Blooming everything *except* it is
+an anti-feature.
+
+So bloom is selective, by an explicit allow-list. `markBloom()` is called at
+exactly six sites — the enemy visor lens, the viewmodel muzzle flash, the world
+and enemy tracer pools, the impact sparks, and the optic reticle. **Nothing is
+tagged by accident and nothing is tagged by brightness.**
+
+The bloom pass then re-renders the scene with every *untagged* material swapped
+for flat black. That second render is the expensive choice and it is deliberate:
+a layer mask would have been cheaper and would have let a visor glow through a
+wall, because objects that are not drawn cannot occlude. Keeping occlusion
+correct is what makes the telegraph a *positional* cue rather than a wallhack.
+
+The chain is deliberately short — `ScenePass → FinalPass → SMAA` — with the bloom
+mix, the ACES tone map, the dusk grade, the vignette and the sRGB encode folded
+into **one** full-screen pass instead of three, because each pass is a 1080p
+read+write and they are all cheap arithmetic.
+
+### 29.2 The tone map had to move, and both paths must agree
+
+Since three r152 the renderer applies `toneMapping` **only when it draws to the
+canvas**. Rendering the scene into a composer target therefore yields linear HDR
+— exactly what bloom needs — and makes the tone map the final pass's job. The
+ACES implementation in `postfx.ts` is three's own, copied verbatim, so that
+`postfx off` and `postfx on` are the same game at two levels of polish rather
+than two differently-exposed games.
+
+That is asserted, not asserted-by-comment:
+
+```
+[PASS] postfx ON  renders a readable frame  — mean 0.172
+[PASS] postfx OFF renders a readable frame  — mean 0.199
+[PASS] the two render paths agree on exposure — Δ0.026
+```
+
+The settings screen can turn post-processing off, which means the game has **two
+render paths**, and a suite that only exercises one of them is testing half the
+build.
+
+### 29.3 The frame budget, measured — and AO rejected on the evidence
+
+Measured on the development machine (Apple M4, ANGLE/Metal, 1600×900, vsync on),
+120-frame rolling window:
+
+| configuration | mean | p95 | fps |
+|---|---:|---:|---:|
+| post-processing OFF | 16.67 ms | 17.2 ms | **60.0** |
+| full (bloom + grade + vignette + SMAA) | **16.67 ms** | 16.8–18.1 ms | **60.0** |
+| without SMAA | 16.67 ms | 17.3 ms | 60.0 |
+| without bloom or SMAA | 16.66 ms | 17.3 ms | 60.1 |
+| full + GTAO | **18.9–22.8 ms** | **33.4 ms** | **44–53** |
+
+**Post-processing is free at this resolution on this machine** — every stage sits
+inside the vsync cap. **Ambient occlusion is not.** GTAO costs 2.2–6.1 ms of mean
+frame time and, more damningly, pushes p95 to 33.4 ms, which is a hard dropped
+frame every sync interval. The brief conditioned AO on holding 60 fps at 1080p;
+it does not, so **it ships OFF**, remains available behind the settings toggle,
+and the number is recorded here rather than the feature being quietly dropped or
+quietly shipped.
+
+Two methodological notes, both of which cost time and are worth the reader's:
+
+- **The harness prints which GPU drew the frame.** Headless Chrome can silently
+  fall back to SwiftShader, and a frame cost measured on a software rasteriser is
+  not a frame cost. Every number above is from `ANGLE Metal Renderer: Apple M4`.
+- **Uncapping vsync to measure headroom destroyed the measurement.**
+  `--disable-frame-rate-limit` makes the render loop starve the compositor:
+  `Page.captureScreenshot` times out and the luminance probe samples a
+  half-composited canvas (24% crushed black on a frame that measures 1.5% with
+  vsync on). The capped numbers answer the real question anyway, because the
+  question is "does it hold 60", not "how fast could it go".
+
+### 29.4 Instrumenting for performance found a latent shader break
+
+`PostFx.setParts()` exists so the cost of each stage can be attributed —
+"post-processing costs 5 ms" is not an actionable number. Disabling SMAA made the
+final pass the *last* pass, which made its render target the **canvas**, which
+made three inject its own `RRTAndODTFit` and `ACESFilmicToneMapping` into the
+shader — colliding with the verbatim copies, and failing compilation with
+`'RRTAndODTFit' : function already has a body`.
+
+A configuration-dependent shader break, invisible in the shipped configuration,
+surfaced by instrumenting for an unrelated question. It is now `nfRRTAndODTFit`
+with a comment explaining exactly why the prefix is not decoration.
+
+---
+
+## 30. Audio: synthesised, and the trade stated plainly
+
+The brief allowed either the backend's generative audio tools or hand-built
+synthesis. Synthesis won on four grounds:
+
+1. **Payload.** The shipped game is 13 MB, most of it the sky and the soldier. A
+   dozen generated WAVs at usable quality is another 2–6 MB for sounds that are
+   half a second long — and every one of them is a filtered noise burst with an
+   envelope. Storing a rendered PCM copy of a filtered noise burst is paying
+   megabytes for arithmetic.
+2. **Layering and distance.** A gunshot here is four layers whose parameters are
+   driven per shot: a high-passed **crack** sweeping down, a fast low **body**
+   (220 → 58 Hz), a bright mechanical **action** tick that makes a burst sound
+   like a mechanism rather than a repeated sample, and a **tail** that *grows*
+   with distance because a far shot is mostly its own reflections. Enemy fire at
+   six ranges is six filter settings, not six sample sets.
+3. **Determinism and testability.** No fetch, no decode, no 404, no CDN, no
+   "the audio silently failed to load and nobody noticed" — which is the exact
+   class of failure §19 exists for. Not having assets is a stronger guarantee
+   than loading them loudly.
+4. **It is the defensible version.** A generated gunshot would be a *better*
+   gunshot. It would also be a black box, and the point of this build is that
+   every choice in it has a reason attached.
+
+**The trade, stated honestly:** these are good *synthesised* sounds, not recorded
+ones. A shipping game would want recordings for the weapon at minimum. What is
+here is convincing at gameplay distance and completely defensible line by line;
+it is not a sound designer.
+
+Three details that are design rather than plumbing:
+
+- **Mastering is structural, not a mixing opinion.** Voices → bus → limiter
+  (20:1, −8 dBFS, 3 ms attack) → master at 0.62. Web Audio does not clip
+  internally — it clips at the *device* — so without a limiter the failure mode
+  is a crackle that only appears on someone else's machine.
+- **Reload foley is scheduled against the animation, not against its own timer.**
+  The three clacks land at the same normalised times the viewmodel's reload uses
+  (mag out 25%, mag in 62%, bolt 88%) computed from the real reload duration, so
+  the empty-mag reload's extra 550 ms moves the sound with it. Foley on a private
+  timer is how a reload ends up clicking after the mag is already seated.
+- **Footstep cadence is driven by DISTANCE TRAVELLED, not by a timer.** One step
+  per 0.82 m of stride (0.62 crouched, 0.95 sprinting), which is why a sprint
+  sounds faster than a walk without a single rate constant anywhere — and why
+  crouching is audibly quieter, which matters because the AI's perception is
+  real (§7.6) and the audio should agree with what the soldiers can tell.
+
+Audio **never throws**. Browsers refuse an AudioContext before a user gesture,
+headless Chrome runs muted, and some environments have no device at all; none of
+those may take the game down, so each ends as `ready === false` plus a recorded
+reason. `tools/smoke.mjs` asserts both that `initAudio()` does not throw and that
+the graph came up.
+
+---
+
+## 31. Two more engine defects, and one that had been shipping behind a comment
+
+### 31.1 Every explicit material override was silently discarded
+
+`assets.standard()` ended with:
+
+```ts
+if (mat.roughnessMap) mat.roughness = 1;
+if (mat.metalnessMap) mat.metalness = 1;
+```
+
+The intent is right — a roughnessMap only *modulates* the scalar, so leaving it
+at a default throws the map away. The bug is that it ran **unconditionally**, so
+it also overwrote whatever the caller had explicitly asked for. Every
+`roughness:` / `metalness:` override in `world/arena.ts` was dead code.
+
+Including this one:
+
+```ts
+// Containers are PAINTED steel, not bare. At the metal set's default 0.85
+// metalness they mirrored the sky and read as flat blue slabs …
+metalness: 0.18,
+```
+
+That comment describes a fix, correctly, for a defect that is plainly visible in
+`shots/01_spawn.png` — and the fix **had never once executed**. The containers
+went on mirroring the sky for the whole of M2.
+
+This is the most instructive bug in the milestone, because of *where* it hid:
+**behind a comment asserting the opposite.** Nothing in a 64-assertion suite
+could see it, because the suite had no way to ask "did that number reach the
+GPU?" A code comment is not a test, and a comment that explains a fix is
+indistinguishable from a comment that explains a fix that does not work.
+
+Fixing it required a second change: `arena.ts` had been supplying blanket
+per-surface defaults (`0.55/0.7` for metal, `0.92/0.02` otherwise) for *every*
+spec, so with the override bug fixed those defaults would have become a blanket
+**scaling** of every baked map. They are gone; `undefined` now means "the map is
+the value", and only a spec that deliberately says "this surface is painted, not
+bare" carries a scalar.
+
+### 31.2 The carbine was assigned to a layer nothing draws
+
+`fitCarbine` set every object to `LAYER.VIEWMODEL`. That constant is a hangover
+from a design in which the weapon lived in the *world* scene and was separated by
+a layer mask; it has not worked that way since M1, when the viewmodel got its own
+scene and its own camera — and every three.js camera has only layer 0 enabled. So
+the weapon was invisible to the only camera that ever draws it, in the frame and
+in the coverage measurement alike.
+
+It was caught by **`viewmodel is actually on screen (not culled away)` reading
+0.00%** — an assertion added at M1 for a completely different reason (a
+frustum-culling bug on skinned meshes). That is the argument for keeping cheap
+sanity assertions around after the bug that motivated them is dead: this one
+found an unrelated defect two milestones later, and it is the difference between
+a red test and a human going "the gun is gone".
+
+---
+
+## 32. Difficulty is a distribution, so it was measured
+
+The brief asks for a mission that is losable but winnable — roughly 60–70% for a
+competent player. That is a claim about a distribution. There is no way to read a
+distribution off a screenshot, off one playthrough, or off the numbers in
+`config.ts`, and the author of a shooter is the worst available instrument for
+measuring its difficulty because they know where the hostiles spawn.
+
+So `tools/balance.mjs` runs a scripted competent player through the real mission
+N times and counts. "Competent" is defined precisely, because the number is only
+as meaningful as the bot: it aims at the nearest hostile it has **real** line of
+sight to (the engine's own `hasLineOfSight`, not a guess), turns at a bounded
+4.5 rad/s rather than snapping, carries a persistent ~1.4° aim error resampled
+several times a second, waits 220 ms after acquiring a target before firing,
+strafes continuously, reloads at 4 rounds rather than at 0 — and does **not** use
+cover, pre-fire, or know where anyone spawns. It runs inside the page on
+`requestAnimationFrame`; driving it over CDP measures the harness's round-trip
+latency as if it were the player's reaction time.
+
+The tuning history is the deliverable:
+
+| build | change | runs | win rate | mean HP on a win |
+|---|---|---:|---:|---:|
+| M2 as shipped | damage 9, burst 3 | 16 | **87.5%** | 42 |
+| M3 step 1 | damage 9 → 13, headshot 15 → 22 | 20 | **75.0%** | 54 |
+| M3 shipped | + burst 3 → 4 | 24 | **62.5%** | 48 |
+
+The step-1 target came from arithmetic rather than from taste: damage taken on a
+win was 58.5 ± 18 hp, so a ~1.45× scaling puts the mean close enough to 100 that
+the variance does the rest.
+
+**Note what was NOT tuned.** `telegraphMs` stays at 400 and `spreadDeg` stays at
+2.6. Shortening the wind-up or tightening the aim cone would also have moved the
+win rate — faster, in fact — and both would have done it by taking away the
+player's ability to *read* and *dodge*, which is the design (§7). Difficulty is
+bought with damage, which the player can respond to, not with information, which
+they cannot. The final step used burst length rather than more damage per round
+for the same reason: a 4-round burst is still something you can break line of
+sight partway through.
+
+Honest limitations: the bot does not use cover, so it measures a floor rather
+than the median player; and a run in which it cannot find the last hostile times
+out and is counted as a loss, which is conservative toward the game.
+
+---
+
+## 33. What is TUNED vs what is STUBBED at M3
+
+**Tuned, measured, and asserted:**
+- Viewmodel screen coverage with the real generated mesh (5.89% / 8.83%).
+- ADS optic alignment (0.14 px from centre).
+- Frame cost per post-processing stage, on a named GPU.
+- Frame luminance on both render paths, and their agreement.
+- Mission win rate (62.5% over 24 runs).
+- Texture seam ratios (worst 0.892).
+- Sky sun direction and warm-arc coverage.
+
+**Deliberately not done, and why:**
+- **Ambient occlusion is off.** Measured at 44–53 fps; the brief conditioned it
+  on 60. Available in settings.
+- **No hands or arms on the viewmodel.** Both dissections call this out in the
+  pipeline's build and it is a real gap here too. It needs a rigged first-person
+  arms mesh with the weapon parented into it — a generation and rigging job of
+  the same size as the soldier, not a polish item, and doing it badly (floating
+  detached gloves) is worse than the honest floating weapon.
+- **Enemy audio is positional but not occluded.** A shot from behind a wall is
+  attenuated by distance, not by the wall. Cheap to add (the collision world
+  already answers the query) and deliberately deferred: it would need its own
+  assertion to be worth having.
+- **The recoil pattern is learnable but not taught.** No firing-range or pattern
+  overlay.
+- **No difficulty settings.** One tuned curve, measured.
+- **WebGPU is still not attempted.** See item 7 of the dissection.
+
+---
+
+## 34. DISSECTION SUMMARY — the top 10 divergences
+
+This is the primary deliverable of the whole exercise: the most instructive
+differences between what this build did and what the pipeline was observed to do
+across `BASELINE_COD_BUILD.md` (v1) and `REBUILD_COD_V2.md` (v2), each written as
+a concrete change to make to the pipeline. Ranked by leverage — item 1 is worth
+more than items 5–10 combined, because it is the defect that dominated both runs.
+
+---
+
+### 1. Make the viewmodel screen budget a MECHANICAL gate, not a judged opinion
+
+**Observed.** The weapon viewmodel was a giant unlit black blob at ~25% of the
+frame in v1 and again in v2. The visual judge named it in blocking rounds 1, 2, 4
+and 5 of v2 — four times, in nearly the same words — and in three consecutive
+rounds of v1. It was never fixed. v2's own conclusion: *"This is the whole game,
+visually."*
+
+**Why it never got fixed.** It was only ever a *scored* finding. The pipeline's
+mechanical gates — compiles, boots, takes input, capture succeeds, playtest
+passes — were green throughout both runs, and those are the gates that terminate
+the loop. The coder responded to proof demands on every one of those turns and to
+the look finding on none of them. **Scorers get ignored; gates get fixed.**
+
+**Change.** Add a `web_measure_viewmodel_coverage` tool that renders the
+viewmodel alone into a small offscreen target and counts covered pixels — the
+exact rasterised footprint, not a bounding-box estimate — and make it a hard
+gate in the FPS playbook: `TERMINAL: SUCCESS` is refused while first-person
+coverage is outside 0.5–15%. Pair it with two structural requirements in the
+brief that make the number achievable: the viewmodel renders in its own scene
+with its own camera in a depth-cleared second pass, and it carries **its own
+lights**. A first-person weapon that depends on world lighting will eventually be
+a silhouette; when it has a dedicated three-point rig that is structurally
+impossible, which is why this build never had the problem to fix.
+
+---
+
+### 2. Every declared seam needs a mechanical "was it called?" assertion
+
+**Observed.** v2's N3: `registerPlayerAvatar` is never called, so pressing **T**
+shows the scaffold's **cyan placeholder cube** — while `enemy_soldier_rigged.glb`
+exists, ships, and is used for the enemies. A one-line seam the scaffold
+documents, skipped. v1's D5 is the same shape: `setEnvironmentFromTexture` was
+copied inside a `CF_HEADLESS` guard, so the judge scored a frame lit differently
+from the shipped game.
+
+**Change.** Make every scaffold seam self-reporting. The scaffold registers each
+seam in a `window.__seams__` map with a `called` flag; the probe reads it and
+fails the build on any seam left unfulfilled, naming it. A seam that is a comment
+saying "replace this" is a suggestion. A seam that fails the build when it is not
+used is a contract.
+
+This build's version of the same idea is stronger and cheaper: **`AvatarModel` is
+an interface with a working implementation, not a TODO.** M1 shipped
+`GrayboxAvatar` conforming to it, so M2's rigged soldier was a one-line
+substitution and there was never a state in which the seam was unfilled. The
+generalisable rule is: *ship the default implementation, not the placeholder.*
+
+---
+
+### 3. Give the sky ONE owner, and make the probe report what is actually bound
+
+**Observed.** D10, in both runs, and worse in v2. The scaffold stages a sky
+library template at scaffold time; the coder generates a bespoke sky that matches
+the concept; the staged template wins. In v2 the coder *explicitly wrote* that
+"bespoke dusk sky matches the concept better than the staged library sky",
+generated a genuinely good `sky_dusk.png`, and called `applySkyDome` +
+`setEnvironmentFromTexture` on it — **and the shipped frame still rendered the
+blue/tan `hdri_golden_sunset` cubemap.** The code was right and the frame was
+wrong, which is strictly worse than v1, where the generated sky was simply never
+wired.
+
+**Change.** Two parts, and the second is the one that matters. (a) When the plan
+says the coder generates a sky, the scaffold's staged template must be **removed
+from the project tree**, not merely left unreferenced — an asset that cannot be
+bound cannot win. (b) The render probe must report the **identity of the sky
+actually bound at runtime** (`{templateId, background, environment, envSource}` —
+v2's smoke already emits exactly this) and the build must fail when it is not the
+one the plan chose. v2 had the evidence in hand and nothing compared it to the
+intent.
+
+---
+
+### 4. Measure the thing the viewer sees, not the thing that is easy to measure
+
+**Observed.** Both dissections land on lighting/palette: v1's *"the sky fights the
+game … the whole palette is wrong because of it"*, v2's *"the frame is a midday
+blue sky over a flat plane"* against a `golden_hour` preset with bloom and grade
+wired.
+
+**And we did it too, with a measuring tool in hand.** M2 measured its HDRI's sun
+at elevation +2.4°, recorded it, matched the key light's azimuth to it, and
+shipped a frame that reads as noon. The measurement was *true* — and it described
+one pixel. A sunset plate's warmth is a wedge with a **height**, and the previous
+plate's wedge hugged the horizon under a saturated blue zenith.
+
+**Change.** Extend the sky/lighting probe from "where is the brightest texel" to
+whole-plate statistics that describe the *visible* sky: warm fraction above the
+horizon, fraction of the horizon **arc** that is warm, and the median height of
+the warm wedge. Gate mood-vs-concept coherence on those. Generalised: **for every
+"we measured it" gate in the pipeline, ask what fraction of the delivered pixels
+the measurement actually describes.** A statistic over one texel is not a
+statistic over a frame.
+
+---
+
+### 5. Assert what reached the GPU — code comments and code are both insufficient
+
+**Observed.** D5 (env map right in code, wrong in the captured frame), D10 (sky
+right in code, wrong in the frame). And in this build, §31.1: `assets.standard()`
+silently overwrote every explicit `roughness`/`metalness` override, so the
+shipping containers' `metalness: 0.18` — carrying a comment explaining that it
+fixes them mirroring the sky — **never executed for the whole of M2**, and the
+containers are visibly blue slabs in the M2 screenshots.
+
+The common shape is: *the source says X, the frame says Y, and nothing compares
+them.*
+
+**Change.** Add a **material/scene truth probe** that walks the live scene graph
+after boot and emits the resolved values actually bound — per material:
+`roughness`, `metalness`, which maps are present, `envMapIntensity`; per light:
+type, colour, intensity, direction; plus tone mapping and exposure. Diff that
+against the plan's declared art direction and surface the differences in the
+build receipt. Most "the code is right and the frame is wrong" defects in both
+runs die instantly against a readback, and none of them are visible to any
+amount of code review.
+
+---
+
+### 6. Every asset-producing or asset-transforming tool must assert a structural post-condition
+
+**Observed.** v2's N4: two **0-byte model files** ship, after `[S3] read FAILED …
+reason='empty-body'` logged 10× following 5 retries each. N6: a texture with a
+**null image** is bound on both backends — WebGL degrades with six
+`Texture marked for update but no image data found` warnings, WebGPU throws and
+never boots.
+
+**And our own, which is the sharpest version of it** (§22.1): `gltf-transform
+optimize` with Draco turned every 2.6 MB prop into a **3 KB file, exit code 0, no
+warning**. A tool reported success while destroying the asset. It was replaced
+with `assetgen/optimize_glb.py`, which parses the GLB JSON chunk and compares
+mesh / primitive / node / accessor / animation / skin counts and vertex totals
+before and after, and fails on any mismatch.
+
+**Change.** Make "success" mean "the artifact is usable", enforced. Every asset
+tool asserts, before returning: non-zero bytes, the container parses, and — for
+transforms — the structural counts are preserved. A downloaded texture asserts a
+decodable image with non-zero dimensions **at download time**, not at bind time
+on a backend nobody tests. Exit code 0 with a destroyed artifact is the worst
+possible failure mode, because every downstream check inherits the lie.
+
+---
+
+### 7. Ship one backend and prove it, or prove both
+
+**Observed.** The WebGPU path was broken in v1 (`GPUValidationError`, a 1×1
+placeholder bound where a 6-face cube was expected — renders, but materially
+darker with environment lighting lost) and broken *differently and worse* in v2
+(`TypeError: Cannot read properties of null` in `three.webgpu` `updateTexture` —
+**the game never boots, stuck at LOADING 0%**). Both times it was **invisible to
+the probe and to the judge, because both force WebGL.** v1's own note: *"Same root
+cause, silent on the backend everybody tests."*
+
+**Change.** Either drop the WebGPU path from the shipped bundle entirely until it
+has a gate, or add a real-GPU headless smoke that boots it and fails on any
+uncaptured WebGPU error and on a boot that does not reach first frame. A code
+path that ships to players and is verified by nothing is worse than one that does
+not ship — it converts a known limitation into a random one.
+
+This build chose the first option and wrote the reason down at M1 (§1.1): **WebGL
+only, deliberately, because reliability beats novelty for a reference build.**
+That decision cost nothing and removed an entire failure class that consumed two
+pipeline runs.
+
+---
+
+### 8. Make the runway buy fixes instead of proof
+
+**Observed.** v1's D3 — the loop terminated SUCCESS on a live blocking verdict at
+half budget — was correctly identified as the highest-leverage fix, shipped, and
+worked: `refusing SUCCESS — blocking verdict live` fired **13 times**. And the
+score went **from 4/10 to 2/10.** v2's own diagnosis: *"between judge rounds, the
+coder is not doing visual work"* — the extra runway went into the **proof loop**
+(`web_capture_render` at 30–33 s, `web_run_playtest` at 8–11 s, each re-demanded
+whenever the other landed), not the fix loop. Attempt 1 then died on the 140-turn
+cap with under half its dollars spent (N1). Meanwhile the *same* weapon finding
+appeared in four separate rounds and nothing in the loop treats "the judge said
+this four times" differently from "the judge said this once".
+
+**Change.** Two coupled changes. (a) **Cache proof against a source hash.** A
+capture and a playtest do not invalidate each other; re-demand either only when
+the files it covers have changed. (b) **Escalate repeats.** Hash each judge
+finding; on the second identical finding, force a *fix-only* turn — no capture,
+no playtest — that must produce a diff touching the named subsystem, and on the
+third, fail the build with that finding as the reason. Right now more budget buys
+more evidence that the same thing is still broken.
+
+---
+
+### 9. Difficulty is a distribution — measure it with a scripted competent player
+
+**Observed.** The pipeline never measures difficulty at all. v2's verification
+reports *"player health drops 100 → 52 during a 9 s forward run"* as evidence that
+**combat is live** — which it is — and there is no notion anywhere of whether the
+mission is winnable, let alone how often. Combined with enemies that **fire while
+moving**, the shipped experience is unbounded in both directions and nobody can
+say which.
+
+**Change.** Add a bot-playtest tool that runs the built game N times with a
+scripted competent player and returns a win-rate distribution, and make a target
+band part of the plan the build is graded against. Define "competent" explicitly
+in the tool (bounded turn rate, persistent aim error, reaction delay, strafing,
+sane reload behaviour, no cover use) so the number means something and is
+comparable across builds. Then tune against it: this build went 87.5% → 75% →
+**62.5%** across three measured configurations.
+
+And a design rule that came out of doing it: **buy difficulty with damage, not
+with information.** Shortening the aim telegraph or tightening the enemy cone
+moves the win rate faster than raising damage does, and both do it by removing
+the player's ability to read and dodge. The telegraph is the design; it is not a
+tuning knob.
+
+---
+
+### 10. Bloom by intent, and give every optional stage a measured cost
+
+**Observed.** v2 ships `golden_hour`, bloom and grade all wired, and the verdict
+on the frame is *"Lighting is flat … a midday blue sky over a flat plane."*
+Post-processing was present and contributed nothing, because a threshold bloom
+over a bright sky blooms the sky. Separately, D9: **`judge_asset` is absent from
+the catalog**, so 9 (v1) and 10 (v2) generated images shipped **uninspected on a
+build whose entire purpose was visual quality** — an optional quality stage that
+was simply not there, and whose absence was logged every turn and acted on never.
+
+**Change.** Two parts. (a) **Bloom requires an explicit emitter allow-list.** The
+brief should demand that the coder tag authored emitters (muzzle flashes, screens,
+lights, telegraphs, tracers) and bloom *only* those, via the standard two-pass
+selective method so occlusion stays correct. Threshold bloom on an outdoor
+daylight or dusk frame is an anti-feature and should be named as one. (b) **Every
+optional render stage carries a measured cost in the build receipt** — frame time
+with the stage on and off, on a named GPU — and any stage that misses the frame
+budget ships **off**, behind a settings toggle, with the number recorded. That is
+what happened here: post-processing measured free (16.67 ms, locked 60) and
+shipped on; GTAO measured 18.9–22.8 ms mean with a 33.4 ms p95 and shipped off.
+Neither outcome was a matter of opinion.
+
+Finally, on D9 specifically: **a quality gate that is absent from the catalog
+should fail the build, not log a skip.** `asset-inspection gate skipped` repeated
+every turn for two consecutive runs is a gate that exists only in the
+documentation.
+
+---
+
+### The thread running through all ten
+
+Nine of these ten are the same sentence in different clothes:
+
+> **The pipeline's mechanical gates are excellent and its judged findings are
+> advisory, so everything that is only judged does not get fixed.**
+
+The fix is not a better judge. It is to convert the things that actually
+determine whether a build reads as finished — viewmodel scale, seam fulfilment,
+which asset is bound, whether the frame's mood matches the concept, what reached
+the GPU, whether the artifact is usable, whether the optional stage is affordable,
+whether the mission is winnable — from *opinions a scorer holds* into
+**measurements a gate enforces**. Every one of them is cheap. Every one of them
+is a number this build already computes.

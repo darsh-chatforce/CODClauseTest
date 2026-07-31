@@ -269,3 +269,116 @@ instruction.
       `hdri_dramatic_sunset`, `hdri_golden_sunset`, `hdri_twilight_quarry`,
       `hdri_soft_dawn` — so "swap to a true dusk sky" is a sourcing decision, not
       a defence-of-daylight decision.
+- [x] **GATE FIX (a) — visor telegraph.** M2's flat cream box replaced by an
+      integrated wrapped goggle strip (cylinder-segment lens + matte housing +
+      rear strap) in `player/soldier.ts`. Authored in METRES and converted via a
+      factor MEASURED off the head bone's own world matrix — M2's numbers were
+      un-scaled rig units, so its "0.16 wide" plate was really 0.29 m and its
+      "0.1 forward" was 0.18 m. Rests DARK (emissive 0.35) and climbs to 4.2
+      across the 400 ms wind-up; M2 rested at 0.9, already ACES-blown, so the
+      telegraph had no headroom to brighten into.
+- [x] **GATE FIX (b) — corrugated metal.** `assetgen/bake_textures.py`
+      `mat_metal()` rebaked. Rib pitch DERIVED from the shipped tiling (1.1
+      tiles/m → 0.909 m tile → 11 ribs at 82.6 mm, real cladding pitch; the old
+      16 was 57 mm). Ribs re-oriented vertical, baked into the ALBEDO (0.139
+      column-mean p-p) so they survive without the normal map, normal strength
+      1.4 → 5.0. Rust rebuilt as small-scale directional streaks bled downhill
+      from fixings/laps/pinholes, double-gated against lap-row banding,
+      desaturated to iron oxide, 15.5% coverage. Roughness 0.60-0.91, metalness
+      peak 0.50 (was floored at 0.18 / peaking 0.95 = a sky mirror).
+      **Seam audit worst UNCHANGED at 0.892; other four materials verified
+      byte-identical by md5.** Iterated 4× against a rendered preview that was
+      actually looked at — iteration 2 measured fine and had grown a rust fringe
+      along every lap row, which no number in the file would have caught.
+- [x] **GATE FIX (c) — dusk sky.** `hdri_industrial_dusk` → `hdri_twilight_quarry`
+      (Poly Haven drackenstein_quarry_puresky, CC0), pulled STANDALONE from the
+      shared S3 sky library. Root cause recorded in `environment.ts`: the old
+      plate's measured "elevation +2.4°" was a true statement about ONE PIXEL and
+      said nothing about the 99.99% of sky the player looks at. The replacement
+      was chosen on warm ARC coverage (100% of the horizon arc, median warm-wedge
+      height ~23°, anti-sun faces neutral grey-blue) and the contact sheet was
+      composited and LOOKED AT before installing. Sun re-measured independently:
+      azimuth +126.0°, elevation +5.7°. All light/fog/fallback constants
+      re-derived; FOG_COLOR taken from the SHADOW side of the horizon band (the
+      straight sample turned the compound to milk) and fog density 0.0115 → 0.006.
+- [x] **ENGINE DEFECT:** `assets.standard()` set `roughness`/`metalness` to 1
+      UNCONDITIONALLY when a map existed, silently discarding every explicit
+      override in `arena.ts` — including the shipping containers' `metalness:
+      0.18`, which carries a comment explaining it fixes them mirroring the sky
+      and **had never once executed**. Hid behind a comment asserting the
+      opposite. Blanket per-surface defaults in `arena.ts` removed with it
+      (they would have become a blanket scaling of every baked map).
+- [x] `src/weapons/carbine.ts` — the generated AR fitted BY MEASUREMENT: scaled
+      by its own bbox to 0.86 m; optic and bore located by region rules in
+      NORMALISED bbox coordinates (survive a re-generation); model translated so
+      the measured optic centre lands on `(0, SIGHT_HEIGHT)` so ADS is correct by
+      construction; magazine SPLIT out of the single generated mesh (777 tris,
+      sharing vertex buffers, differing only in index) so M1's reload mag-swap
+      still works. Loud on failure: any region rule that catches nothing keeps
+      the placeholder rather than shipping an unknown optic.
+- [x] Reticle AUTHORED at the measured optical axis — Tripo modelled the shape of
+      a red dot with no red dot in it, and an empty tube is an obstruction, not a
+      sight picture.
+- [x] Carbine in EVERY soldier's hands (hostiles + third-person avatar). Mount
+      orientation DERIVED, not dialled in:
+      `holderLocal = inverse(handWorld)·(rootWorld·Ry(π))`, with only a small
+      stylistic cant on top. The first pass guessed Euler angles and produced a
+      soldier holding a carbine vertically across his chest.
+- [x] **ENGINE DEFECT:** the carbine was assigned `LAYER.VIEWMODEL` — a hangover
+      from a pre-M1 design — making it invisible to the viewmodel camera (which,
+      like every three.js camera, has only layer 0). Caught by M1's
+      `viewmodel is actually on screen` assertion reading 0.00%.
+- [x] `src/fx/postfx.ts` — SELECTIVE bloom on an explicit `markBloom()` allow-list
+      (visor lens, muzzle flash, both tracer pools, sparks, reticle) via the
+      darken-non-bloom two-pass method so occlusion stays correct and the dusk sky
+      cannot bloom. Chain: `ScenePass → FinalPass (bloom mix + ACES + dusk grade +
+      vignette + sRGB, folded into one pass) → SMAA`. Tone map moved into the
+      final pass (three only tone-maps canvas draws) and copies three's ACES
+      verbatim so postfx on/off agree — asserted, Δ0.026.
+- [x] **FRAME COST MEASURED** on Apple M4 / ANGLE-Metal at 1600×900, vsync on,
+      120-frame window: postfx OFF **16.67 ms**, FULL **16.67 ms** (locked 60),
+      no-SMAA 16.67, no-bloom/SMAA 16.66. **GTAO 18.9-22.8 ms mean, 33.4 ms p95
+      = 44-53 fps → AO SHIPS OFF**, available in settings, number recorded.
+      Harness prints the GPU string (headless Chrome can fall back to SwiftShader
+      and a software frame cost is not a frame cost). Uncapping vsync to measure
+      headroom starved the compositor and corrupted the luminance probe — reverted.
+- [x] **LATENT SHADER BREAK found by instrumenting for perf:** three injects its
+      own `RRTAndODTFit`/`ACESFilmicToneMapping` into any ShaderMaterial whose
+      target is the CANVAS, so the final pass compiled fine mid-chain and failed
+      the moment SMAA was disabled and it became last. Renamed `nf*`.
+- [x] `src/audio/audio.ts` — SYNTHESISED WebAudio, not generated files (payload,
+      layering/distance, determinism, defensibility — see DECISIONS §30). Gunshots
+      as four layers (crack/body/action/tail, tail growing with distance),
+      hit/kill confirms, reload foley scheduled against the REAL reload duration,
+      distance-driven footsteps, wind + rumble bed, UI ticks, end stings.
+      Mastered through a 20:1 limiter at −8 dBFS into a 0.62 master so the worst
+      case cannot reach 0 dBFS. NEVER THROWS — failure is a recorded reason.
+- [x] Feel: shell ejection (8 pooled cases in the viewmodel scene), muzzle-flash
+      sprite + light driven from ONE shared `FLASH_MS`, polished death
+      (directional shove along the shot line, per-soldier yaw twist, weapon
+      dropped and falling to rest).
+- [x] Settings toggles (post-processing / AO / audio) rendered into BOTH the start
+      and pause screens from ONE definition, so an option cannot exist on one
+      screen and not the other.
+- [x] `tools/look.mjs` — fast visual/perf probe (~40 s vs the suite's ~4 min) for
+      look tuning. Reports GPU, luminance on both paths from the SAME viewpoint,
+      viewmodel coverage, ADS optic alignment, per-stage frame cost.
+- [x] `tools/balance.mjs` — **difficulty MEASURED**, not guessed: a scripted
+      competent player (bounded 4.5 rad/s turn, ~1.4° persistent aim error,
+      220 ms reaction, continuous strafing, reloads at 4, no cover use) runs the
+      real mission N times inside the page on rAF. Tuning history:
+      **87.5% (16 runs, M2 as shipped) → 75.0% (20 runs, damage 9→13,
+      headshot 15→22) → 62.5% (24 runs, + burst 3→4) = IN the 60-70% band.**
+      `telegraphMs` and `spreadDeg` deliberately NOT touched: difficulty is bought
+      with damage, which the player can respond to, not with information.
+- [x] Smoke suite extended **52 → 64 assertions**: carbine fitted / optic on the
+      ADS axis in model space / magazine split; postfx on by default and AO off;
+      audio init does not throw and the graph came up; **ADS puts the optic ON the
+      crosshair (0.14 px, tolerance 2 px)**; both render paths boot readable and
+      agree on exposure; post-processing holds a playable frame rate.
+      The optic assertion caught its own subtlety — at 450 ms the ADS pose is
+      still ~0.3% short and read 3.32 px, so the harness now lets the filter
+      settle rather than the tolerance being widened to cover a real transient.
+- [x] `DECISIONS.md` extended with §26-§34, closing with the **DISSECTION SUMMARY
+      — top 10 divergences**, each phrased as a concrete pipeline change. That
+      section is the primary deliverable of the exercise.

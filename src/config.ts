@@ -166,16 +166,43 @@ export const ENEMY = {
    *  wind-up before the first round leaves the barrel. */
   haltMs: 180,
   telegraphMs: 400,
-  burstCount: 3,
+  /** Rounds per burst. Raised from 3 at M3: 13 damage alone took the measured
+   *  win rate from 87.5% to 75%, and the remaining gap is bought with a longer
+   *  burst rather than more damage per round, because a 4-round burst is still
+   *  something the player can break line of sight partway through. */
+  burstCount: 4,
   burstIntervalMs: 130,
   postBurstMs: 420,
   /** Speed below which the enemy counts as "stopped" (m/s). The smoke test
    *  asserts speed < this whenever state ∈ {halt, aim, fire}. */
   stoppedSpeed: 0.05,
 
-  damage: 9,
-  headshotDamage: 15,
-  /** Aim cone half-angle in degrees; larger = more dodgeable. */
+  /**
+   * ===== LETHALITY, SET BY MEASUREMENT =====
+   *
+   * The brief asks for a mission that is losable but winnable — about 60-70% for
+   * a competent player. That is a claim about a distribution, and the author of a
+   * shooter is the worst instrument for measuring its difficulty, so it is
+   * measured instead: `tools/balance.mjs` runs a scripted competent player
+   * (bounded 4.5 rad/s turn, ~1.4° persistent aim error, 220 ms reaction,
+   * continuous strafing, reloads at 4, no cover use) through the real mission and
+   * counts.
+   *
+   * At M2's 9 damage the bot won 87.5% of 16 runs, finishing on a mean 42 hp —
+   * comfortably too easy. Damage taken on a win was 58.5 ± 18 hp, so a ~1.45×
+   * scaling puts the mean close enough to 100 that the spread does the rest.
+   *
+   * NOTE WHAT IS *NOT* TUNED HERE. `telegraphMs` stays at 400 and `spreadDeg`
+   * stays at 2.6. Shortening the wind-up or tightening the cone would also have
+   * moved the win rate, and both would have done it by taking away the player's
+   * ability to READ and DODGE — which is the design (DECISIONS §7). Difficulty
+   * is bought with damage, which the player can respond to, not with information,
+   * which they cannot.
+   */
+  damage: 13,
+  headshotDamage: 22,
+  /** Aim cone half-angle in degrees; larger = more dodgeable. Deliberately NOT
+   *  a difficulty knob — see the note above. */
   spreadDeg: 2.6,
   range: 55,
   /** Engagement band — they close to this before halting to shoot. */
