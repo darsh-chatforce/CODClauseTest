@@ -1,0 +1,20 @@
+{
+  "slug": "oil_drum",
+  "subject": "a single rusted fuel barrel oil drum, dented weathered steel with peeling olive paint, upright closed lid, game asset, isolated, no ground plane",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 4000,
+  "credits": 70,
+  "started": "2026-07-31T13:39:46",
+  "balance_before": 19855.0,
+  "prompt": "a single rusted fuel barrel oil drum, dented weathered steel with peeling olive paint, upright closed lid, game asset, isolated, no ground plane",
+  "gen_task_id": "bcdaff9d-923a-4ef9-a1cc-c6f8a9605504",
+  "raw_bytes": 942884,
+  "lowpoly_task_id": "d1e6ea2f-9c03-4e80-b172-073a2de968c1",
+  "lowpoly": true,
+  "bytes": 1283704,
+  "balance_after": 19775.0,
+  "balance_delta": 80.0,
+  "ok": true,
+  "seconds": 232.3
+}

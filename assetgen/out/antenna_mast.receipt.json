@@ -1,0 +1,20 @@
+{
+  "slug": "antenna_mast",
+  "subject": "a military radio antenna mast, slender guyed lattice steel tower with a dish and whip antennas at the top, weathered grey metal, game asset, isolated, no ground plane",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 4000,
+  "credits": 70,
+  "started": "2026-07-31T13:38:52",
+  "balance_before": 19905.0,
+  "prompt": "a military radio antenna mast, slender guyed lattice steel tower with a dish and whip antennas at the top, weathered grey metal, game asset, isolated, no ground plane",
+  "gen_task_id": "597f628c-e791-48df-97b5-32c4b813254a",
+  "raw_bytes": 913928,
+  "lowpoly_task_id": "cf7a0a31-dc99-4b80-a0bd-b2fe62cea0ef",
+  "lowpoly": true,
+  "bytes": 2993904,
+  "balance_after": 19775.0,
+  "balance_delta": 130.0,
+  "ok": true,
+  "seconds": 556.4
+}

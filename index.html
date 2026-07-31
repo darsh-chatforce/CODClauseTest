@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Operation Nightfall</title>
+    <link rel="icon" href="data:," />
+    <!-- Critical background only; the full HUD stylesheet is imported by main.ts
+         so it goes through the bundler and ships hashed. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05070a;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- =============== HUD (DOM overlay) =============== -->
+      <div id="hud" aria-hidden="true">
+        <!-- full-screen feedback layers (below the readouts) -->
+        <div id="vignette"></div>
+        <div id="flash"></div>
+        <div id="damage-arcs"></div>
+
+        <!-- crosshair -->
+        <div id="crosshair">
+          <span class="ch-tick" data-dir="up"></span>
+          <span class="ch-tick" data-dir="down"></span>
+          <span class="ch-tick" data-dir="left"></span>
+          <span class="ch-tick" data-dir="right"></span>
+          <span class="ch-dot"></span>
+          <svg id="hitmarker" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4 L9 9 M20 4 L15 9 M4 20 L9 15 M20 20 L15 15" />
+          </svg>
+        </div>
+
+        <!-- top-left: objective + hostiles -->
+        <div id="objective">
+          <div class="obj-label">OBJECTIVE</div>
+          <div class="obj-text" id="objective-text">CLEAR THE COMPOUND</div>
+          <div class="obj-sub">
+            <span class="tag">HOSTILES</span>
+            <span class="val" id="hostiles">0</span>
+          </div>
+        </div>
+
+        <!-- top-center: mission timer -->
+        <div id="timer"><span id="timer-value">00:00</span></div>
+
+        <!-- top-right: kill feed -->
+        <div id="killfeed"></div>
+
+        <!-- bottom-left: health -->
+        <div id="health">
+          <div class="hp-row">
+            <span class="tag">VITALS</span>
+            <span class="val" id="health-value">100</span>
+          </div>
+          <div class="hp-bar"><i id="health-fill"></i></div>
+        </div>
+
+        <!-- bottom-right: ammo -->
+        <div id="ammo">
+          <div class="ammo-row">
+            <span id="ammo-mag">30</span><span class="slash">/</span><span id="ammo-reserve">120</span>
+          </div>
+          <div class="ammo-label">5.56 &times; 45 &nbsp;·&nbsp; <span id="weapon-name">MK-4 CARBINE</span></div>
+          <div class="reload-bar"><i id="reload-fill"></i></div>
+          <div class="reload-label" id="reload-label">RELOADING</div>
+        </div>
+
+        <!-- bottom-center: contextual prompt -->
+        <div id="prompt"></div>
+      </div>
+
+      <!-- =============== SCREENS =============== -->
+      <div id="screens">
+        <section id="screen-start" class="screen">
+          <p class="eyebrow">OPERATION</p>
+          <h1>NIGHTFALL</h1>
+          <p class="blurb">
+            Dusk. A forward compound, six hostiles, one carbine.<br />Clear it.
+          </p>
+          <button id="btn-start" class="cta" type="button">DEPLOY</button>
+          <div class="settings" id="settings-start"></div>
+          <ul class="controls">
+            <li><b>WASD</b> move</li>
+            <li><b>SHIFT</b> sprint</li>
+            <li><b>SPACE</b> jump</li>
+            <li><b>C</b> crouch</li>
+            <li><b>LMB</b> fire</li>
+            <li><b>RMB</b> aim</li>
+            <li><b>R</b> reload</li>
+            <li><b>T</b> inspect</li>
+            <li><b>ESC</b> pause</li>
+          </ul>
+        </section>
+
+        <section id="screen-end" class="screen hidden">
+          <p class="eyebrow" id="end-eyebrow">MISSION</p>
+          <h1 id="end-title">COMPLETE</h1>
+          <div class="stats" id="end-stats"></div>
+          <button id="btn-restart" class="cta" type="button">REDEPLOY</button>
+        </section>
+
+        <section id="screen-pause" class="screen hidden">
+          <p class="eyebrow">MISSION</p>
+          <h1>PAUSED</h1>
+          <p class="blurb">Click anywhere to resume.</p>
+          <div class="settings" id="settings-pause"></div>
+        </section>
+      </div>
+
+      <!-- third-person inspect banner -->
+      <div id="inspect-banner" class="hidden">INSPECT &mdash; <b>T</b> to return &middot; drag to orbit</div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "slug": "barrier_concrete",
+  "subject": "a single grey concrete jersey barrier road block, weathered scuffed concrete with faded orange hazard stripe, game asset, isolated, no ground plane",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 4000,
+  "credits": 70,
+  "started": "2026-07-31T13:27:30",
+  "balance_before": 20155.0,
+  "prompt": "a single grey concrete jersey barrier road block, weathered scuffed concrete with faded orange hazard stripe, game asset, isolated, no ground plane",
+  "gen_task_id": "861f3e97-8852-4d09-a6f1-5a4ce27d8f27",
+  "raw_bytes": 832836,
+  "lowpoly_task_id": "a0a4943b-dd19-4e97-9400-6e54f1ccf71d",
+  "lowpoly": true,
+  "bytes": 2779108,
+  "balance_after": 19855.0,
+  "balance_delta": 300.0,
+  "ok": true,
+  "seconds": 736.8
+}

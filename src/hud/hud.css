@@ -1,0 +1,644 @@
+/* =========================================================================
+   Operation Nightfall — HUD / screens
+   Layout follows FPS-playbook conventions:
+     centre  crosshair (+ hitmarker)
+     TL      objective + hostiles
+     TC      mission timer
+     TR      kill feed
+     BL      health
+     BR      ammo + reload
+   Everything is a DOM overlay over the WebGL canvas: zero draw-call cost,
+   crisp text at any DPR, and trivially inspectable from a CDP smoke test.
+   ========================================================================= */
+
+:root {
+  --hud-key: #ffb648; /* amber — primary readouts */
+  --hud-dim: #8b9099; /* labels */
+  --hud-ink: #eef2f4; /* values */
+  --hud-bad: #ff3b30; /* damage */
+  --hud-good: #7ce0a4; /* confirmed kill */
+  --hud-pad: clamp(14px, 2.2vmin, 30px);
+  --hud-font: 'DIN Alternate', 'Bahnschrift', 'Roboto Condensed', 'Arial Narrow', system-ui,
+    sans-serif;
+  --hud-scale: clamp(0.78, 0.62 + 0.42vw, 1.15);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #05070a;
+  color: var(--hud-ink);
+  font-family: var(--hud-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+#game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: none;
+}
+
+body:not(.playing) #game-canvas {
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- HUD root */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  font-size: calc(16px * var(--hud-scale));
+  /* keep every readout clear of notches / rounded corners */
+  padding: max(var(--hud-pad), env(safe-area-inset-top))
+    max(var(--hud-pad), env(safe-area-inset-right)) max(var(--hud-pad), env(safe-area-inset-bottom))
+    max(var(--hud-pad), env(safe-area-inset-left));
+}
+
+body.playing #hud,
+body.inspect #hud {
+  opacity: 1;
+}
+
+body.inspect #crosshair {
+  opacity: 0;
+}
+
+.tag {
+  font-size: 0.68em;
+  letter-spacing: 0.22em;
+  color: var(--hud-dim);
+}
+
+/* --------------------------------------------------------------- crosshair */
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transition: opacity 0.12s ease;
+}
+
+.ch-tick {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+  /* --spread is written by hud.ts every frame (bloom) */
+  --spread: 7px;
+}
+
+.ch-tick[data-dir='up'],
+.ch-tick[data-dir='down'] {
+  width: 2px;
+  height: 7px;
+  left: -1px;
+}
+
+.ch-tick[data-dir='up'] {
+  bottom: var(--spread);
+}
+.ch-tick[data-dir='down'] {
+  top: var(--spread);
+}
+
+.ch-tick[data-dir='left'],
+.ch-tick[data-dir='right'] {
+  width: 7px;
+  height: 2px;
+  top: -1px;
+}
+
+.ch-tick[data-dir='left'] {
+  right: var(--spread);
+}
+.ch-tick[data-dir='right'] {
+  left: var(--spread);
+}
+
+.ch-dot {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  left: -1px;
+  top: -1px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* ADS: crosshair collapses to the dot (the sight does the aiming) */
+body.ads .ch-tick {
+  opacity: 0;
+}
+
+#hitmarker {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  left: -17px;
+  top: -17px;
+  opacity: 0;
+  stroke: #fff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  fill: none;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+}
+
+#hitmarker.kill {
+  stroke: var(--hud-bad);
+}
+
+/* ------------------------------------------------------- objective / timer */
+
+#objective {
+  position: absolute;
+  left: var(--hud-pad);
+  top: var(--hud-pad);
+  border-left: 2px solid var(--hud-key);
+  padding-left: 0.7em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.obj-label {
+  font-size: 0.62em;
+  letter-spacing: 0.3em;
+  color: var(--hud-key);
+}
+
+.obj-text {
+  font-size: 1.06em;
+  letter-spacing: 0.06em;
+}
+
+.obj-sub {
+  margin-top: 0.25em;
+  display: flex;
+  gap: 0.5em;
+  align-items: baseline;
+}
+
+.obj-sub .val {
+  font-size: 1.15em;
+  font-variant-numeric: tabular-nums;
+  color: var(--hud-key);
+}
+
+#timer {
+  position: absolute;
+  top: var(--hud-pad);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.05em;
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(238, 242, 244, 0.82);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+/* ---------------------------------------------------------------- killfeed */
+
+#killfeed {
+  position: absolute;
+  right: var(--hud-pad);
+  top: var(--hud-pad);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3em;
+  font-size: 0.8em;
+  letter-spacing: 0.1em;
+}
+
+.kf-row {
+  background: rgba(6, 9, 12, 0.55);
+  border-right: 2px solid var(--hud-bad);
+  padding: 0.25em 0.6em;
+  animation: kf-in 0.18s ease-out;
+}
+
+.kf-row .who {
+  color: var(--hud-good);
+}
+.kf-row .verb {
+  color: var(--hud-dim);
+  margin: 0 0.4em;
+}
+.kf-row .hs {
+  color: var(--hud-key);
+  margin-left: 0.4em;
+}
+
+@keyframes kf-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+/* ------------------------------------------------------------ health / ammo */
+
+#health {
+  position: absolute;
+  left: var(--hud-pad);
+  bottom: var(--hud-pad);
+  width: 15em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.hp-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+}
+
+.hp-row .val {
+  font-size: 1.6em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.hp-bar {
+  margin-top: 0.35em;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.hp-bar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--hud-ink);
+  transform-origin: left;
+  transition: width 0.18s ease-out, background-color 0.2s linear;
+}
+
+body.hurt .hp-bar i {
+  background: var(--hud-bad);
+}
+
+#ammo {
+  position: absolute;
+  right: var(--hud-pad);
+  bottom: var(--hud-pad);
+  text-align: right;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.ammo-row {
+  font-size: 2.6em;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+#ammo-mag {
+  color: var(--hud-ink);
+}
+
+.ammo-row .slash,
+#ammo-reserve {
+  color: var(--hud-dim);
+  font-size: 0.52em;
+}
+
+.ammo-row .slash {
+  margin: 0 0.25em;
+}
+
+body.dry #ammo-mag {
+  color: var(--hud-bad);
+}
+
+.ammo-label {
+  font-size: 0.64em;
+  letter-spacing: 0.2em;
+  color: var(--hud-dim);
+  margin-top: 0.25em;
+}
+
+.reload-bar {
+  margin-top: 0.5em;
+  margin-left: auto;
+  height: 3px;
+  width: 9em;
+  background: rgba(255, 255, 255, 0.14);
+  opacity: 0;
+  transition: opacity 0.12s linear;
+}
+
+.reload-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--hud-key);
+}
+
+.reload-label {
+  font-size: 0.6em;
+  letter-spacing: 0.28em;
+  color: var(--hud-key);
+  opacity: 0;
+  margin-top: 0.3em;
+  transition: opacity 0.12s linear;
+}
+
+body.reloading .reload-bar,
+body.reloading .reload-label {
+  opacity: 1;
+}
+
+#prompt {
+  position: absolute;
+  bottom: calc(var(--hud-pad) + 4.2em);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.78em;
+  letter-spacing: 0.24em;
+  color: var(--hud-key);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+#prompt.show {
+  opacity: 1;
+}
+
+/* --------------------------------------------------- damage feedback layers */
+
+#vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(120, 0, 0, 0) 34%,
+    rgba(150, 6, 6, 0.55) 78%,
+    rgba(90, 0, 0, 0.9) 100%
+  );
+  transition: opacity 0.28s ease-out;
+}
+
+#flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: #ff2b2b;
+  mix-blend-mode: screen;
+}
+
+#damage-arcs {
+  position: absolute;
+  inset: 0;
+}
+
+.dmg-arc {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.dmg-arc::before {
+  content: '';
+  position: absolute;
+  left: -46px;
+  top: -132px;
+  width: 92px;
+  height: 26px;
+  background: linear-gradient(to bottom, rgba(255, 60, 50, 0.92), rgba(255, 60, 50, 0));
+  clip-path: polygon(0% 100%, 50% 0%, 100% 100%);
+}
+
+/* -------------------------------------------------------------- screens/UI */
+
+#screens {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.screen {
+  pointer-events: auto;
+  text-align: center;
+  padding: 2.4rem 3rem;
+  background: radial-gradient(ellipse at center, rgba(8, 11, 15, 0.86), rgba(4, 6, 9, 0.96));
+  border: 1px solid rgba(255, 182, 72, 0.22);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  max-width: min(90vw, 620px);
+  animation: screen-in 0.28s ease-out;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.screen.hidden {
+  display: none;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.55em;
+  color: var(--hud-key);
+}
+
+.screen h1 {
+  margin: 0.1em 0 0.3em;
+  font-size: clamp(2.6rem, 8vw, 4.4rem);
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.blurb {
+  margin: 0 0 1.6rem;
+  color: #b9c0c7;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+
+.cta {
+  font-family: inherit;
+  font-size: 1rem;
+  letter-spacing: 0.34em;
+  padding: 0.85em 2.4em 0.85em 2.7em;
+  color: #10131a;
+  background: var(--hud-key);
+  border: 0;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.1);
+}
+
+.cta:active {
+  transform: translateY(1px);
+}
+
+.controls {
+  list-style: none;
+  padding: 0;
+  margin: 1.9rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.4em, 1fr));
+  gap: 0.45em 1.2em;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  color: var(--hud-dim);
+}
+
+.controls b {
+  color: var(--hud-ink);
+  margin-right: 0.5em;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------- settings ---
+   Rendered into BOTH the start and pause screens from one definition in
+   screens.ts, so a setting cannot exist on one screen and not the other. */
+.settings {
+  margin: 1.7rem 0 0;
+  padding-top: 1.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5em, 1fr));
+  gap: 0.5em 1.4em;
+  text-align: left;
+}
+
+.settings .opt {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  cursor: pointer;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: var(--hud-dim);
+  user-select: none;
+}
+
+.settings .opt:hover {
+  color: var(--hud-ink);
+}
+
+/* A switch, not a checkbox: the native control cannot be styled to sit in this
+   HUD language, and a shooter's options screen is part of the art direction. */
+.settings .opt input {
+  appearance: none;
+  margin: 0;
+  width: 2.15em;
+  height: 1.1em;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings .opt input::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: calc(1.1em - 4px);
+  height: calc(1.1em - 4px);
+  background: var(--hud-dim);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.settings .opt input:checked {
+  background: rgba(255, 182, 72, 0.2);
+  border-color: rgba(255, 182, 72, 0.6);
+}
+
+.settings .opt input:checked::after {
+  transform: translateX(1.05em);
+  background: var(--hud-key);
+}
+
+.settings .opt input:focus-visible {
+  outline: 2px solid var(--hud-key);
+  outline-offset: 2px;
+}
+
+.settings .opt .note {
+  color: rgba(139, 144, 153, 0.6);
+  letter-spacing: 0.08em;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55em 2.2em;
+  margin: 0 0 1.8rem;
+  font-size: 0.88rem;
+  letter-spacing: 0.1em;
+}
+
+.stats div {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.35em;
+}
+
+.stats span:first-child {
+  color: var(--hud-dim);
+}
+
+.stats span:last-child {
+  font-variant-numeric: tabular-nums;
+  color: var(--hud-key);
+}
+
+#inspect-banner {
+  position: absolute;
+  bottom: 2.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.74rem;
+  letter-spacing: 0.24em;
+  color: var(--hud-key);
+  background: rgba(6, 9, 12, 0.6);
+  padding: 0.6em 1.2em;
+  border: 1px solid rgba(255, 182, 72, 0.25);
+  pointer-events: none;
+}
+
+#inspect-banner.hidden {
+  display: none;
+}

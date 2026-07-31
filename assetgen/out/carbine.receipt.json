@@ -1,0 +1,20 @@
+{
+  "slug": "carbine",
+  "subject": "a modern military assault carbine rifle, short-barrelled 5.56 automatic carbine with a railed handguard, collapsible stock, pistol grip, straight box magazine, muzzle device on the end of the barrel and a small red-dot optic mounted on the top rail, matte black and dark olive furniture, clean readable silhouette, weapon pointing to the right with the barrel horizontal, side profile, game asset, isolated on a plain background, no hands, no character, no ground plane, no stand",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 8000,
+  "credits": 70,
+  "started": "2026-07-31T14:00:22",
+  "balance_before": 19775.0,
+  "prompt": "a modern military assault carbine rifle, short-barrelled 5.56 automatic carbine with a railed handguard, collapsible stock, pistol grip, straight box magazine, muzzle device on the end of the barrel and a small red-dot optic mounted on the top rail, matte black and dark olive furniture, clean readable silhouette, weapon pointing to the right with the barrel horizontal, side profile, game asset, isolated on a plain background, no hands, no character, no ground plane, no stand",
+  "gen_task_id": "2ed48a27-bf54-48cc-87a2-4848cba83270",
+  "raw_bytes": 1058016,
+  "lowpoly_task_id": "eda6c621-e886-45e8-a8c0-9c4049762c9b",
+  "lowpoly": true,
+  "bytes": 2845972,
+  "balance_after": 19725.0,
+  "balance_delta": 50.0,
+  "ok": true,
+  "seconds": 279.2
+}

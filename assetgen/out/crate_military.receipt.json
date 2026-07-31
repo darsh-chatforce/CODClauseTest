@@ -1,0 +1,20 @@
+{
+  "slug": "crate_military",
+  "subject": "a single weathered military supply crate, olive drab wooden ammunition box with metal corner brackets and stencilled markings, closed lid, game asset, isolated on a plain background, no ground, no base",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 4000,
+  "credits": 70,
+  "started": "2026-07-31T13:27:30",
+  "balance_before": 20155.0,
+  "prompt": "a single weathered military supply crate, olive drab wooden ammunition box with metal corner brackets and stencilled markings, closed lid, game asset, isolated on a plain background, no ground, no base",
+  "gen_task_id": "ae05ee3c-9343-4113-bb8f-1823af353218",
+  "raw_bytes": 799548,
+  "lowpoly_task_id": "41267f36-1e04-4041-a2fd-e6a11e785f80",
+  "lowpoly": true,
+  "bytes": 2668852,
+  "balance_after": 19905.0,
+  "balance_delta": 250.0,
+  "ok": true,
+  "seconds": 682.7
+}

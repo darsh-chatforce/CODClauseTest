@@ -1,0 +1,55 @@
+{
+  "schema_version": "sky-cubemap-v2",
+  "template_id": "hdri_twilight_quarry",
+  "mood": "golden-hour-dusk",
+  "source": "polyhaven",
+  "faces": [
+    "px",
+    "nx",
+    "py",
+    "ny",
+    "pz",
+    "nz"
+  ],
+  "face_size": 1024,
+  "env": "env.png",
+  "env_headless": "env_small.png",
+  "env_size": [
+    256,
+    128
+  ],
+  "env_headless_size": [
+    64,
+    32
+  ],
+  "lighting_preset": "golden_hour",
+  "exposure": 0.5,
+  "attribution": "Poly Haven — drackenstein_quarry_puresky (CC0), Andreas Mischok, Jarod Guest",
+  "prompt": "",
+  "created_at": "2026-07-30T23:18:28.227206+00:00",
+  "installed_at": "2026-07-31T00:00:00+00:00",
+  "installed_from": "s3://babble-games-projects-test/shared/sky-cubemaps/hdri_twilight_quarry/",
+  "notes": "Replaces hdri_industrial_dusk, which measured as a sunset but rendered as a midday blue sky: its warm wedge had a MEDIAN height of 0 deg and covered only 35% of the horizon arc, so from the spawn sightline the frame showed nothing but the cool anti-sun hemisphere. This plate is warm across 100% of the arc with a median warm-wedge height of 23.3 deg (70.8% of the arc stays warm to at least 15 deg), which is what lets the key light be raked up to a playable elevation without the sky contradicting it. PNGs losslessly recompressed on install; pixels are bit-identical to the library originals.",
+  "measured_sun": {
+    "tool": "assetgen/sky_sun.py",
+    "azimuth_deg": 126.0,
+    "elevation_deg": 5.7,
+    "direction": [0.8053, 0.0999, 0.5843],
+    "convention": "azimuth measured from -Z toward +X; elevation = asin(y)",
+    "brightest_face": "px"
+  },
+  "measured_colours": {
+    "horizon": "#928b7b",
+    "zenith": "#454d5a",
+    "sun_side_horizon": "#c9bda1",
+    "anti_sun_horizon": "#7a7c77",
+    "ground": "#323438"
+  },
+  "measured_stats": {
+    "mean_luminance": 0.403,
+    "warm_fraction_above_horizon": 0.192,
+    "cool_fraction_above_horizon": 0.723,
+    "warm_arc_fraction": 1.0,
+    "warm_wedge_median_deg": 23.3
+  }
+}

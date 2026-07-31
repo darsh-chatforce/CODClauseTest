@@ -1,0 +1,23 @@
+{
+  "name": "handcrafted-fps",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Operation Nightfall - a hand-built reference-quality browser FPS (WebGL / three.js).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node tools/smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.1",
+    "puppeteer-core": "^24.10.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "three": "0.185.1"
+  }
+}

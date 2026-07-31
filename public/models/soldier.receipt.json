@@ -1,0 +1,287 @@
+{
+  "clips": {
+    "idle": {
+      "library_clip": "Idle_A",
+      "frames": 76,
+      "shared_bones": 66,
+      "bytes": 89328,
+      "clip_names": [
+        "idle"
+      ],
+      "name_ok": true
+    },
+    "walk": {
+      "library_clip": "Walk",
+      "frames": 41,
+      "shared_bones": 66,
+      "bytes": 81464,
+      "clip_names": [
+        "walk"
+      ],
+      "name_ok": true
+    },
+    "run": {
+      "library_clip": "Jog",
+      "frames": 29,
+      "shared_bones": 66,
+      "bytes": 77236,
+      "clip_names": [
+        "run"
+      ],
+      "name_ok": true
+    },
+    "aim": {
+      "library_clip": "Pistol_Idle",
+      "frames": 51,
+      "shared_bones": 66,
+      "bytes": 76236,
+      "clip_names": [
+        "aim"
+      ],
+      "name_ok": true
+    },
+    "fire": {
+      "library_clip": "Pistol_Shoot",
+      "frames": 20,
+      "shared_bones": 66,
+      "bytes": 69928,
+      "clip_names": [
+        "fire"
+      ],
+      "name_ok": true
+    },
+    "death": {
+      "library_clip": "Death_B",
+      "frames": 45,
+      "shared_bones": 66,
+      "bytes": 98304,
+      "clip_names": [
+        "death"
+      ],
+      "name_ok": true
+    }
+  },
+  "source_bytes": 3095892,
+  "tpose_gate": {
+    "tag": "soldier",
+    "usable": true,
+    "score": 0.9022,
+    "avg_droop_deg": 6.8,
+    "droop_R_deg": 7.1,
+    "droop_L_deg": 6.5,
+    "reach_R": 0.886,
+    "reach_L": 0.995,
+    "min_reach": 0.886,
+    "lr_sym_diff_deg": 0.6,
+    "span_ratio": 1.004,
+    "leg_gap_frac": 1.0,
+    "body_height": 0.996,
+    "arm_span": 1.0,
+    "up_axis": "Y",
+    "span_axis": "Z",
+    "facing_axis": "X",
+    "checks": {
+      "arms_horizontal": true,
+      "arms_extended": true,
+      "symmetric": true,
+      "arms_out_span": true
+    },
+    "thresholds": {
+      "droop": 22.0,
+      "reach": 0.85,
+      "sym": 22.0,
+      "span": 0.88
+    }
+  },
+  "landmarks": {
+    "n_markers": 12,
+    "span_axis": "Y",
+    "facing_axis": "X",
+    "forward_hint": false,
+    "out": "/Users/dshah/Chatforce/handcrafted-fps/assetgen/rigwork/landmarks.json"
+  },
+  "build": {
+    "ok": true,
+    "model": "out",
+    "method": "a_robust",
+    "skeleton_type": "human",
+    "plan": "biped",
+    "verts": 19524,
+    "fit_scale": 0.6112,
+    "forward": [
+      0.0,
+      -1.0,
+      0.0
+    ],
+    "skin": {
+      "method": "a_robust",
+      "shells_total": 1,
+      "dmax_frac": 0.03,
+      "small_shells": 0,
+      "body_verts": 19524,
+      "of": 19524,
+      "transfer_confident": 18633,
+      "inpainted": 891,
+      "active_bones": 20,
+      "rigid_bindings": {},
+      "orphan_verts": 0,
+      "shell_sizes_top6": [
+        19524
+      ]
+    },
+    "fit_qc": {
+      "bones_checked": 20,
+      "midpoint_inside": 15,
+      "inside_frac": 0.75,
+      "core_bones": 20,
+      "inside_frac_core": 0.75,
+      "thin_bones": 0,
+      "thin_max_dist_frac": 0.0,
+      "thin_mean_dist_frac": 0.0,
+      "len_min": 0.0306,
+      "len_max": 0.2429
+    },
+    "snap": {
+      "head": 0.0331,
+      "pelvis": 0.0356,
+      "upperarm_l": 0.0176,
+      "hand_l": 0.0161,
+      "lowerarm_l": 0.0051,
+      "upperarm_r": 0.0197,
+      "hand_r": 0.0161,
+      "lowerarm_r": 0.0129,
+      "calf_l": 0.0242,
+      "foot_l": 0.0093,
+      "calf_r": 0.0303,
+      "foot_r": 0.0093
+    },
+    "snap_max_frac": 0.0356,
+    "chin_gap_frac": 0.12,
+    "snap_exempt": [],
+    "model_height": 1.0,
+    "shoulder_seat": {
+      "applied": false,
+      "reason": "no_medial_shoulder"
+    },
+    "fingers": {
+      "mode": "curl",
+      "config_mode": "auto",
+      "auto": {
+        "auto": true,
+        "mode": "curl",
+        "tip_min": 150,
+        "elong_min": 1.4,
+        "separable_l": false,
+        "separable_r": false,
+        "detail": {
+          "l": {
+            "n_prongs": 1,
+            "n_tip": 370,
+            "n_components": 1,
+            "reach_along": 0.0174,
+            "halfwidth": 0.0398,
+            "elong": 0.44,
+            "separable": false
+          },
+          "r": {
+            "n_prongs": 1,
+            "n_tip": 308,
+            "n_components": 2,
+            "reach_along": 0.0186,
+            "halfwidth": 0.046,
+            "elong": 0.4,
+            "separable": false
+          }
+        }
+      },
+      "seat": {
+        "hand_l": {
+          "along_scale": 0.116,
+          "lat_scale": 0.5,
+          "reach_along": 0.0174,
+          "halfwidth": 0.0397
+        },
+        "hand_r": {
+          "along_scale": 0.122,
+          "lat_scale": 0.5,
+          "reach_along": 0.0183,
+          "halfwidth": 0.042
+        }
+      },
+      "reweighted": 768,
+      "seat_frac": 0.0,
+      "seat_inside": 0,
+      "seat_total": 30
+    },
+    "medial_snap": {
+      "bracket": "span",
+      "diag": 1.4281,
+      "vertical_axis_bones": [],
+      "snap_max": 0.0356,
+      "snap_mean": 0.0161,
+      "snap_frac_of_diag_max": 0.0249,
+      "rejected": [],
+      "per_marker": {
+        "calf_l": 0.002,
+        "calf_r": 0.0039,
+        "foot_l": 0.0068,
+        "foot_r": 0.0068,
+        "hand_l": 0.0162,
+        "hand_r": 0.0162,
+        "head": 0.0147,
+        "lowerarm_l": 0.0356,
+        "lowerarm_r": 0.0312,
+        "pelvis": 0.0039,
+        "upperarm_l": 0.0283,
+        "upperarm_r": 0.0273
+      }
+    },
+    "chains": {},
+    "align_gate": {
+      "plan": "biped",
+      "axes": [
+        {
+          "name": "spine",
+          "expect": "vertical",
+          "deg": 0.14,
+          "tol_deg": 25,
+          "pass": true
+        },
+        {
+          "name": "leg_l",
+          "expect": "vertical",
+          "deg": 7.23,
+          "tol_deg": 25,
+          "pass": true
+        },
+        {
+          "name": "leg_r",
+          "expect": "vertical",
+          "deg": 7.23,
+          "tol_deg": 25,
+          "pass": true
+        },
+        {
+          "name": "arm_l",
+          "expect": "horizontal",
+          "deg": 2.24,
+          "tol_deg": 35,
+          "pass": true
+        },
+        {
+          "name": "arm_r",
+          "expect": "horizontal",
+          "deg": 2.22,
+          "tol_deg": 35,
+          "pass": true
+        }
+      ],
+      "pass": true,
+      "worst_over_tol_deg": -17.77,
+      "worst_axis": "leg_l"
+    },
+    "build_s": 13.6,
+    "out": "/Users/dshah/Chatforce/handcrafted-fps/public/models/soldier.glb"
+  },
+  "seconds": 28.4
+}

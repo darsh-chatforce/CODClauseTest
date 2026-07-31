@@ -1,0 +1,20 @@
+{
+  "slug": "watchtower",
+  "subject": "a military compound guard watchtower, square open steel-frame tower with a ladder, railed observation platform and a corrugated metal roof, weathered olive and rust, game asset, isolated, no ground plane",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 4000,
+  "credits": 70,
+  "started": "2026-07-31T13:33:04",
+  "balance_before": 19975.0,
+  "prompt": "a military compound guard watchtower, square open steel-frame tower with a ladder, railed observation platform and a corrugated metal roof, weathered olive and rust, game asset, isolated, no ground plane",
+  "gen_task_id": "13969156-4d14-46e0-9b67-66cd3c7cf57a",
+  "raw_bytes": 882456,
+  "lowpoly_task_id": "32ae6f20-9594-4363-86d8-32120c0f2904",
+  "lowpoly": true,
+  "bytes": 2720196,
+  "balance_after": 19775.0,
+  "balance_delta": 200.0,
+  "ok": true,
+  "seconds": 554.8
+}

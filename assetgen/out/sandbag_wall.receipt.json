@@ -1,0 +1,20 @@
+{
+  "slug": "sandbag_wall",
+  "subject": "a low stacked sandbag wall barricade, three courses of dusty tan hessian sandbags stacked in a straight run, military fortification, game asset, isolated, no ground plane",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 4000,
+  "credits": 70,
+  "started": "2026-07-31T13:27:30",
+  "balance_before": 20155.0,
+  "prompt": "a low stacked sandbag wall barricade, three courses of dusty tan hessian sandbags stacked in a straight run, military fortification, game asset, isolated, no ground plane",
+  "gen_task_id": "b4a4f47f-0e6d-40c4-89ed-e4fbd65311b7",
+  "raw_bytes": 786248,
+  "lowpoly_task_id": "0849beb3-00d4-42e5-8aaf-0168fc3bea4d",
+  "lowpoly": true,
+  "bytes": 2174716,
+  "balance_after": 19975.0,
+  "balance_delta": 180.0,
+  "ok": true,
+  "seconds": 333.9
+}

@@ -1,0 +1,20 @@
+{
+  "slug": "enemy_soldier",
+  "subject": "a modern military infantry soldier in dark olive-drab tactical combat fatigues, plate carrier vest with pouches, combat helmet with a mounted night-vision bracket, knee pads and tactical boots, dark neutral colours, clean stylised game-ready character, no weapon in hands, empty open hands",
+  "is_character": true,
+  "pbr": true,
+  "face_limit": 0,
+  "credits": 70,
+  "started": "2026-07-31T13:27:24",
+  "balance_before": 20175.0,
+  "prompt": "a modern military infantry soldier in dark olive-drab tactical combat fatigues, plate carrier vest with pouches, combat helmet with a mounted night-vision bracket, knee pads and tactical boots, dark neutral colours, clean stylised game-ready character, no weapon in hands, empty open hands, standing in a strict symmetric T-pose, both arms fully extended straight out horizontally to the sides at shoulder height (parallel to the ground), legs straight and slightly apart, facing forward, front view, full body visible, neutral relaxed hands",
+  "gen_task_id": "6e74ec43-35dd-469e-9ad2-43430b9b441f",
+  "raw_bytes": 42083104,
+  "lowpoly_task_id": "eff30375-c7bc-4cd4-9d37-c7adf9b2bfc6",
+  "lowpoly": true,
+  "bytes": 3095892,
+  "balance_after": 19925.0,
+  "balance_delta": 250.0,
+  "ok": true,
+  "seconds": 465.5
+}
