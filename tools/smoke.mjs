@@ -470,6 +470,19 @@ async function main() {
       opticPx < 2.0,
       `optic lands ${opticPx.toFixed(2)} px from screen centre (NDC ${optic.x.toFixed(5)}, ${optic.y.toFixed(5)})`,
     );
+    // ---- M3: THE APERTURE IS OPEN ------------------------------------------
+    // The player asked to be able to look through the scope. Tripo cannot model
+    // a hole (DECISIONS §36 — two generations, both measured solid by
+    // `assetgen/aperture.py`), so the optic is authored and the aperture is the
+    // ABSENCE of geometry. That is exactly the kind of claim that rots silently,
+    // so it is raycast rather than eyeballed: down the sight line, in the real
+    // ADS pose, with the reticle excluded.
+    const sight = await page.evaluate(() => window.__FPS__.opticClear());
+    check(
+      'the optic aperture is open (you can see through the sight)',
+      sight.clear === true,
+      sight.clear ? 'sight line clear' : `blocked by ${sight.blockedBy} at ${sight.distance.toFixed(3)} m`,
+    );
     const adsShot = await shot('03_ads.png');
     await page.evaluate(() => window.__FPS__.key('ads', false));
     await wait(350);

@@ -929,6 +929,11 @@ export class Game {
     return this.viewmodel.projectOptic();
   }
 
+  /** Is the ADS sight line clear through the optic's aperture? */
+  opticClear(): { clear: boolean; blockedBy: string | null; distance: number } {
+    return this.viewmodel.probeSightLine();
+  }
+
   /** Mean/95th-percentile frame time over the rolling window, plus the fps. */
   frameCost(): { meanMs: number; p95Ms: number; fps: number; samples: number } {
     const n = this.frameTimeCount;

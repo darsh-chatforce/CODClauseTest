@@ -61,6 +61,8 @@ export interface TestApi {
   audioMuted(muted: boolean): void;
   /** Optic position in NDC — must be (0,0) in a settled ADS pose. */
   optic(): { x: number; y: number };
+  /** Raycast down the sight line: is the optic's aperture actually open? */
+  opticClear(): { clear: boolean; blockedBy: string | null; distance: number };
   /** Rolling frame-time statistics over the last 120 frames. */
   frameCost(): { meanMs: number; p95Ms: number; fps: number; samples: number };
   resetFrameCost(): void;
@@ -112,6 +114,7 @@ const api: TestApi = {
   initAudio: () => game.initAudio(),
   audioMuted: (muted) => game.setAudioMuted(muted),
   optic: () => game.opticNdc(),
+  opticClear: () => game.opticClear(),
   frameCost: () => game.frameCost(),
   resetFrameCost: () => game.resetFrameCost(),
 };

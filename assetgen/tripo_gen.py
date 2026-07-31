@@ -104,6 +104,31 @@ PROPS = {
         "horizontal, side profile, game asset, isolated on a plain background, "
         "no hands, no character, no ground plane, no stand"
     ),
+    # M3 RE-GENERATION: the player asked to be able to LOOK THROUGH the scope.
+    #
+    # `carbine` above produced a beautifully modelled optic that is a solid
+    # block — Tripo modelled the SHAPE of a red dot with no aperture in it, so
+    # aiming down it is an obstruction rather than a sight picture. This prompt
+    # attacks that directly: the aperture is described as a hole you can see
+    # through, repeatedly and in the generator's own vocabulary (open, hollow,
+    # "see-through", thin ring), because a single mention of "red dot sight"
+    # reliably yields a filled cuboid.
+    #
+    # Whether it WORKS is a measurement, not a hope — `assetgen/aperture.py`
+    # ray-casts the optic region to decide. See DECISIONS §36.
+    "carbine_optic": (
+        "a modern military assault carbine rifle, short-barrelled 5.56 automatic "
+        "carbine with a railed handguard, collapsible stock, pistol grip, straight "
+        "box magazine and a muzzle device on the end of the barrel; mounted on the "
+        "top rail is a HOLLOW OPEN TUBE red-dot sight — a thin metal ring with a "
+        "large empty circular hole straight through it front to back, completely "
+        "open and see-through like a doughnut or a washer, you can see the "
+        "background through the middle of the sight, no glass, no lens, no solid "
+        "face, the hole is empty air; matte black metal and dark olive furniture, "
+        "clean readable silhouette, weapon pointing to the right with the barrel "
+        "horizontal, side profile, game asset, isolated on a plain background, "
+        "no hands, no character, no ground plane, no stand"
+    ),
 }
 
 

@@ -331,8 +331,8 @@ export class PostFx {
     // a morphological filter with no temporal component; on a huge smooth
     // silhouette against a bright sky it reduces the stair-stepping but not the
     // crawl. This puts the 4× MSAA back underneath it.
-    this.finalComposer.renderTarget1.samples = 4;
-    this.finalComposer.renderTarget2.samples = 4;
+    this.finalComposer.renderTarget1.samples = 0;
+    this.finalComposer.renderTarget2.samples = 0;
     this.finalComposer.addPass(this.scenePass);
     this.finalPass = new ShaderPass(FinalShader);
     this.finalPass.uniforms.tBloom.value = this.bloomComposer.readBuffer.texture;
@@ -348,8 +348,8 @@ export class PostFx {
     this.finalComposer.setPixelRatio(pixelRatio);
     // `setSize` reallocates the targets' storage, so the sample count is
     // re-asserted rather than assumed to survive.
-    this.finalComposer.renderTarget1.samples = 4;
-    this.finalComposer.renderTarget2.samples = 4;
+    this.finalComposer.renderTarget1.samples = 0;
+    this.finalComposer.renderTarget2.samples = 0;
     const bw = Math.max(1, Math.floor(width * 0.5));
     const bh = Math.max(1, Math.floor(height * 0.5));
     this.bloomComposer.setSize(bw, bh);

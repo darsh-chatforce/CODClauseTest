@@ -64,6 +64,17 @@ export const CARBINE_LENGTH = 0.86;
 const REGION = {
   bore: { v: [0.0, 1.0], w: [0.0, 0.08] },
   optic: { v: [0.8, 1.0], w: [0.38, 0.66] },
+  /**
+   * What to CUT AWAY, which is deliberately wider than what to MEASURE.
+   *
+   * `optic` defines the optical AXIS and must stay tight — widening it downward
+   * would drag the measured centre into the mount and move the sight line. The
+   * strip region only has to remove material, so it reaches further down and
+   * further along the rail to take the generated mount blocks with the tube.
+   * Two regions, two jobs; conflating them would trade a clean cut for a wrong
+   * aim point.
+   */
+  opticStrip: { v: [0.72, 1.0], w: [0.34, 0.7] },
   magazine: { v: [0.0, 0.45], w: [0.4, 0.62] },
   /** The pistol grip — the point that goes in a soldier's hand. */
   grip: { v: [0.0, 0.45], w: [0.63, 0.8] },
@@ -86,6 +97,8 @@ export interface CarbineFit {
     opticX: number;
     opticY: number;
     magazineTriangles: number;
+    /** Generated optic triangles removed and replaced by the authored one. */
+    opticTrianglesRemoved: number;
   };
 }
 
@@ -166,7 +179,7 @@ export function fitCarbine(assets: Assets): CarbineFit | null {
       magazine: null,
       optic: new THREE.Vector3(),
       problems,
-      stats: { vertices, lengthMetres: CARBINE_LENGTH, opticX: 0, opticY: 0, magazineTriangles: 0 },
+      stats: { vertices, lengthMetres: CARBINE_LENGTH, opticX: 0, opticY: 0, magazineTriangles: 0, opticTrianglesRemoved: 0 },
     };
   }
 
@@ -189,6 +202,30 @@ export function fitCarbine(assets: Assets): CarbineFit | null {
 
   // ---- 4. muzzle on the bore axis -----------------------------------------
   const muzzle = new THREE.Vector3(boreCentre.x, boreCentre.y, box.min.z + shift.z);
+
+  // ---- 4a. REMOVE the generated optic and author a real one ---------------
+  //
+  // THE FINDING (DECISIONS §36): Tripo cannot model a hole. Two generations were
+  // asked for a see-through sight — the second with a prompt that says "hollow",
+  // "open tube", "completely open and see-through", "the hole is empty air" —
+  // and `assetgen/aperture.py` fires rays down the sight line through both and
+  // finds ZERO clear rays through the optic's core in either. They are solid
+  // blocks shaped like sights.
+  //
+  // So the optic is CUT OUT and replaced with an authored one. This is the
+  // honest split: the generator is good at organic, irregular, textured
+  // form — a receiver, a handguard, a stock — and bad at the small, precise,
+  // FUNCTIONAL feature the gameplay actually runs through. A red-dot's aperture
+  // is not decoration; it is the thing the player aims with.
+  const removed = stripRegion(model, bounds, REGION.opticStrip);
+  if (removed < 20) {
+    // The region rule found the optic well enough to measure its centre, so if
+    // it then removes almost nothing the two disagree and the authored ring
+    // would be mounted on top of a solid generated block.
+    problems.push(`optic strip removed only ${removed} triangles`);
+  }
+  const optic = buildAuthoredOptic(opticCentre);
+  group.add(optic);
 
   // ---- 4b. the RETICLE ----------------------------------------------------
   // The generated optic is a housing, not an optic: Tripo modelled the shape of
@@ -274,8 +311,113 @@ export function fitCarbine(assets: Assets): CarbineFit | null {
       opticX: opticCentre.x,
       opticY: opticCentre.y,
       magazineTriangles,
+      opticTrianglesRemoved: removed,
     },
   };
+}
+
+/**
+ * Delete every triangle whose centroid falls inside a region. Returns the count.
+ *
+ * Same machinery as `splitMagazine`, different verb: the magazine is moved to a
+ * second object, the optic is thrown away. Both work by rewriting the index and
+ * leaving the vertex buffers alone, so neither costs memory.
+ */
+function stripRegion(model: THREE.Object3D, bounds: Bounds, region: { v: readonly number[]; w: readonly number[] }): number {
+  let removed = 0;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const centroid = new THREE.Vector3();
+  model.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const geo = mesh.geometry;
+    const index = geo.getIndex();
+    const pos = geo.getAttribute('position');
+    if (!index || !pos) return;
+    const keep: number[] = [];
+    for (let t = 0; t < index.count; t += 3) {
+      const i0 = index.getX(t);
+      const i1 = index.getX(t + 1);
+      const i2 = index.getX(t + 2);
+      a.fromBufferAttribute(pos as THREE.BufferAttribute, i0).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(pos as THREE.BufferAttribute, i1).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(pos as THREE.BufferAttribute, i2).applyMatrix4(mesh.matrixWorld);
+      centroid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+      if (inRegion(centroid, bounds, region)) removed++;
+      else keep.push(i0, i1, i2);
+    }
+    if (removed) {
+      geo.setIndex(keep);
+      geo.computeBoundingSphere();
+    }
+  });
+  return removed;
+}
+
+/**
+ * The authored optic: a ring you can actually see through.
+ *
+ * It is deliberately the minimum that is FUNCTIONAL — a thin housing ring, a
+ * mount post down to the rail, and nothing at all in the middle. No lens plane,
+ * not even a transparent one: a transparent lens is still a draw, still tints,
+ * still needs a blend order, and the honest answer to "can I look through it" is
+ * an empty hole. The viewmodel is drawn in its own pass over the already-rendered
+ * world, so wherever the weapon is absent, the world shows through. The aperture
+ * IS the absence.
+ *
+ * Sized off a real micro red dot: a ~22 mm window, a 3 mm housing wall.
+ */
+function buildAuthoredOptic(centre: THREE.Vector3): THREE.Group {
+  const g = new THREE.Group();
+  g.name = 'carbine-optic-authored';
+
+  const APERTURE = 0.0135; // inner radius (27 mm window)
+  const WALL = 0.003;
+
+  const body = new THREE.MeshStandardMaterial({
+    color: 0x16181b,
+    roughness: 0.42,
+    metalness: 0.85,
+  });
+
+  // The housing ring. Torus axis is +Z by default, which is the sight line.
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(APERTURE + WALL * 0.5, WALL, 10, 28),
+    body,
+  );
+  ring.position.copy(centre);
+  g.add(ring);
+
+  // A short tube between two rings reads as a real optic from the side rather
+  // than as a hoop stuck on a rail, and it frames the aperture at an angle.
+  const tube = new THREE.Mesh(
+    new THREE.CylinderGeometry(APERTURE + WALL, APERTURE + WALL, 0.03, 24, 1, true),
+    body,
+  );
+  tube.rotation.x = Math.PI / 2;
+  tube.position.copy(centre);
+  g.add(tube);
+
+  const frontRing = ring.clone();
+  frontRing.position.z -= 0.015;
+  g.add(frontRing);
+
+  // Mount post down to the rail.
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.03, 0.026), body);
+  post.position.set(centre.x, centre.y - APERTURE - 0.019, centre.z);
+  g.add(post);
+
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh) {
+      m.castShadow = false;
+      m.receiveShadow = false;
+      m.frustumCulled = false;
+    }
+  });
+  return g;
 }
 
 /**

@@ -429,6 +429,48 @@ export class Viewmodel {
   }
 
   /**
+   * IS THE SIGHT LINE ACTUALLY CLEAR?
+   *
+   * The player asked to be able to look THROUGH the scope, and "the optic has a
+   * hole in it" is a claim that a screenshot cannot settle — a dark recess and a
+   * hole look identical from the front. So it is raycast: fire down −Z from the
+   * viewmodel camera's eye (which in the settled ADS pose is exactly the sight
+   * line) and report whatever the weapon puts in the way.
+   *
+   * The reticle is excluded by name. It is a projected image on the shooter's
+   * eye, not an obstruction — it is drawn with `depthTest: false` for the same
+   * reason — and counting it would make a correct optic fail.
+   */
+  probeSightLine(): { clear: boolean; blockedBy: string | null; distance: number } {
+    this.scene.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster(
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, 0, -1),
+      0.002,
+      2.0,
+    );
+    // `Sprite.raycast` dereferences `raycaster.camera`, and the muzzle flash is
+    // a Sprite parented to the weapon — without this the probe throws
+    // "Cannot read properties of null (reading 'matrixWorld')" rather than
+    // answering the question.
+    ray.camera = this.camera;
+    const hits = ray
+      .intersectObject(this.model, true)
+      // The reticle is a projected image on the shooter's eye, not an
+      // obstruction (hence `depthTest: false`), and the muzzle flash is an
+      // emitter that lives at the far end of the barrel. Neither blocks a sight.
+      .filter(
+        (h) => h.object.name !== 'carbine-reticle' && !(h.object as THREE.Sprite).isSprite,
+      );
+    if (!hits.length) return { clear: true, blockedBy: null, distance: 0 };
+    return {
+      clear: false,
+      blockedBy: hits[0].object.name || hits[0].object.type,
+      distance: hits[0].distance,
+    };
+  }
+
+  /**
    * EXACT silhouette coverage: renders the viewmodel scene alone into a small
    * offscreen target and counts covered pixels. Not an estimate from bounding
    * boxes — the real rasterised footprint, so the 15% budget cannot be gamed.

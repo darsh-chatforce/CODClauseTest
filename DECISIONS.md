@@ -2010,18 +2010,42 @@ Raised to **384 × 40**. ~31 k triangles on one decorative, collider-free mesh,
 which is nothing at a locked 60 fps, and the AFTER frame's dune has a continuous
 gradient and a rounded outline.
 
-**Cause B — post-processing was silently discarding hardware MSAA.**
+**Cause B — post-processing silently discards hardware MSAA. Real, measured,
+and deliberately NOT fixed.**
+
 `new WebGLRenderer({ antialias: true })` antialiases only the **default
 framebuffer**. The moment M3 started rendering the scene into an
 `EffectComposer` target that flag became dead, and `EffectComposer` allocates its
 targets with `samples: 0`. So turning post-processing on quietly removed 4× MSAA
 and left SMAA — a morphological filter with no temporal component — to hold a
-high-contrast silhouette on its own. `renderTarget1/2.samples = 4` puts it back,
-and is re-asserted after `setSize` because that reallocates the storage.
+high-contrast silhouette on its own. A genuine M3 regression that no assertion
+could see: the frame was still readable, still the right exposure, still 60 fps.
 
-This one is a genuine M3 regression that no assertion could see: the frame was
-still readable, still the right exposure, still 60 fps. It is exactly the class
-of defect §34 item 5 is about — *the code was right and the frame was wrong.*
+Putting it back is one line, and it was put back — and then **costed**, on the
+same machine in the same session:
+
+| composer target samples | frame time |
+|---|---:|
+| 0 (shipped) | 20.0 ms |
+| 2 | 27.1 ms (+7.1) |
+| 4 | 31.7 ms (+11.7) |
+
+MSAA on a **half-float** target is expensive — 4× the fragment and depth work for
+the entire scene pass plus a resolve — and +11.7 ms does not fit inside 16.67 ms
+at any baseline. The full suite duly went red on it:
+`postfx ON 34.29 ms (29.2 fps)`.
+
+So it does not ship, and that is the point. This project's own dissection
+(§34 item 10) tells the pipeline that *every optional render stage carries a
+measured cost, and one that misses the frame budget ships off with the number
+recorded* — and the first time that rule was pointed at this build's own work it
+said no. The line is left in place set to 0, with the cost table beside it, so
+the next person targeting a machine with headroom changes one digit and knows
+exactly what they are buying.
+
+The aliasing MSAA would have helped is instead attacked at the source, by
+tessellating the berm — which is free (measured at 21.4 ms vs 20.7 ms for the old
+mesh, i.e. inside the noise) and fixes the shading breaks as well.
 
 **And the one suggested cause that was half-right.** The shadow camera was
 `ARENA.size * 0.8` = ±32 m while the berm starts at r = 28 m with
@@ -2033,3 +2057,128 @@ as the camera moved. Widened to ±40 m (3.9 cm/texel instead of 3.1 cm at 2048²
 This was real, it was contributing, and it was *not* the main cause — the berm
 "flickering in and out of the shadow frustum" would have shown as instability
 across the surface, which the speckle map explicitly rules out.
+
+---
+
+## 36. The see-through optic: what generation cannot do
+
+**The request:** *"I want to look through the scope."*
+
+M2's carbine has a beautifully modelled red-dot sight with **no hole in it**.
+Tripo modelled the *shape* of an optic, and a shape is not an aperture. Aiming
+down it is an obstruction, not a sight picture.
+
+### 36.1 Asking again, properly, and measuring the answer
+
+A second generation was commissioned (`carbine_optic`, 70 credits) with a prompt
+that attacks the failure directly and in the generator's own vocabulary — the
+aperture is described as *"a HOLLOW OPEN TUBE"*, *"a thin metal ring with a large
+empty circular hole straight through it front to back"*, *"completely open and
+see-through like a doughnut or a washer"*, *"you can see the background through
+the middle of the sight"*, *"no glass, no lens, no solid face, the hole is empty
+air"*. Six restatements, because one mention of "red dot sight" reliably yields a
+filled cuboid.
+
+Whether it worked is **not** a question a render can answer: from the front, a
+dark recess and a hole look identical. It is a geometry question with a geometry
+answer, so `assetgen/aperture.py` fires a grid of rays down the sight line and
+counts triangle crossings. Through a real aperture the count is zero; through a
+solid block it is two (front face, back face) or more.
+
+```
+cross-section, rays fired down the sight line (. = CLEAR, digit = triangles crossed):
+  |...............|
+  |....2222.......|
+  |..2246422......|
+  |.22222244......|
+  |.242222244.....|
+  |24422222462....|
+  |24422222242....|      <- the optic, seen end-on
+  |.2422222442....|
+  |.22422244......|
+  |..2244442......|
+  |...222222......|
+```
+
+**Both generations: zero clear rays through the optic core.** They are solid
+blocks shaped like sights. The 70 credits bought a definitive negative result,
+which is worth having written down.
+
+### 36.2 The probe's own first verdict was wrong, and that is the lesson twice over
+
+The first version of `aperture.py` counted clear rays *in the middle of the
+sample box* and passed on four or more. The sample box is a rectangle around an
+optic that is not rectangular, so its corners are clear for every object ever
+modelled — and the solid tube scored 18 "inner" clear rays and was declared
+**OPEN APERTURE**.
+
+A gate that passes the exact artefact it was written to catch is worse than no
+gate, because it launders a defect as a verified result. The fix was to ask the
+right question: an aperture is a clear region **at the centre of the material**,
+so find the centroid of the cells that *hit* something — that is where the optic
+body is — and test the rays through *that*. Both models then score 0/25.
+
+This is the third time in this build that a measurement was true and useless
+(§27.3's sun elevation, §35.2's probe measuring a menu, and now this). It is the
+single most repeatable failure mode in the whole project and it generalises
+straight to the pipeline: **a number is only a gate if it measures the thing you
+care about, and the cheapest way to find out is to point the gate at a known-bad
+input and confirm it goes red.**
+
+### 36.3 The fix: generated base + authored functional optic
+
+The generated optic is **cut out** — `stripRegion()` deletes the 776 triangles
+whose centroids fall in the optic region, by rewriting the index and leaving the
+vertex buffers alone — and replaced with an authored one: a thin torus housing, a
+short tube, a front ring, a mount post, and **nothing at all in the middle**.
+
+Not even a transparent lens. A transparent lens is still a draw, still tints,
+still needs a blend order, and the honest answer to "can I look through it" is an
+empty hole. The viewmodel is drawn in its own pass over the already-rendered
+world, so wherever the weapon is absent the world shows through: **the aperture
+is the absence.**
+
+Two region rules are used, not one, and the distinction matters:
+
+- `optic` (`v > 0.80`) defines the optical **axis** and stays tight — widening it
+  downward would drag the measured centre into the mount and move the sight line,
+  which is the one thing that must not move.
+- `opticStrip` (`v > 0.72`, wider along the rail) only has to **remove material**,
+  so it reaches further and takes the generated mount blocks with the tube.
+
+Conflating them would have traded a clean cut for a wrong aim point.
+
+### 36.4 And the claim is a gate
+
+`Viewmodel.probeSightLine()` raycasts down −Z from the viewmodel camera — which
+in the settled ADS pose *is* the sight line — and the suite asserts it comes back
+clear:
+
+```
+[PASS] the optic aperture is open (you can see through the sight) — sight line clear
+[PASS] ADS puts the optic ON the crosshair (geometric, not eyeballed) — 0.01 px from centre
+[PASS] hip viewmodel covers < 15% of the frame — 5.77%
+[PASS] ADS viewmodel covers < 15% of the frame — 8.22%
+```
+
+The reticle is excluded by name (it is a projected image on the shooter's eye,
+which is why it is drawn `depthTest: false`) and so are sprites. Writing it
+exposed a smaller bug immediately: `Sprite.raycast` dereferences
+`raycaster.camera`, and the muzzle flash is a Sprite parented to the weapon, so
+the probe threw instead of answering until the camera was supplied.
+
+### 36.5 The dissection finding
+
+**This split is itself the result.** The generator is genuinely good at the
+organic, irregular, textured bulk of an object — the receiver, the handguard, the
+stock, the magazine, all of which are better than anything that would have been
+hand-modelled here. It is unable to produce the small, precise, *functional*
+feature that the gameplay actually runs through, and it does not know that it
+failed: it returns a confident, well-textured, correctly-shaped solid.
+
+The actionable pipeline change: **for any asset with a functional feature — an
+aperture to aim through, a doorway to walk through, a handle to grip, a window to
+see out of — generate the bulk and AUTHOR the feature, and gate the feature with
+a geometric probe rather than a look.** A generator that cannot represent
+negative space should not be asked for negative space; it should be asked for the
+material around it.

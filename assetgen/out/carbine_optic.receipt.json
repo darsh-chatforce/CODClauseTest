@@ -1,0 +1,20 @@
+{
+  "slug": "carbine_optic",
+  "subject": "a modern military assault carbine rifle, short-barrelled 5.56 automatic carbine with a railed handguard, collapsible stock, pistol grip, straight box magazine and a muzzle device on the end of the barrel; mounted on the top rail is a HOLLOW OPEN TUBE red-dot sight \u2014 a thin metal ring with a large empty circular hole straight through it front to back, completely open and see-through like a doughnut or a washer, you can see the background through the middle of the sight, no glass, no lens, no solid face, the hole is empty air; matte black metal and dark olive furniture, clean readable silhouette, weapon pointing to the right with the barrel horizontal, side profile, game asset, isolated on a plain background, no hands, no character, no ground plane, no stand",
+  "is_character": false,
+  "pbr": true,
+  "face_limit": 4000,
+  "credits": 70,
+  "started": "2026-07-31T18:31:27",
+  "balance_before": 18955.0,
+  "prompt": "a modern military assault carbine rifle, short-barrelled 5.56 automatic carbine with a railed handguard, collapsible stock, pistol grip, straight box magazine and a muzzle device on the end of the barrel; mounted on the top rail is a HOLLOW OPEN TUBE red-dot sight \u2014 a thin metal ring with a large empty circular hole straight through it front to back, completely open and see-through like a doughnut or a washer, you can see the background through the middle of the sight, no glass, no lens, no solid face, the hole is empty air; matte black metal and dark olive furniture, clean readable silhouette, weapon pointing to the right with the barrel horizontal, side profile, game asset, isolated on a plain background, no hands, no character, no ground plane, no stand",
+  "gen_task_id": "c7df0af4-9330-46f3-af0d-76e5e1caebea",
+  "raw_bytes": 1060956,
+  "lowpoly_task_id": "4a74c4e4-51f3-42cc-a2e7-53348cea8135",
+  "lowpoly": true,
+  "bytes": 2722656,
+  "balance_after": 18905.0,
+  "balance_delta": 50.0,
+  "ok": true,
+  "seconds": 157.3
+}

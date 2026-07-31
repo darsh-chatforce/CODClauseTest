@@ -398,3 +398,66 @@ instruction.
 - [x] Fresh 7-screenshot set captured into `shots/` at the same angles as M1/M2
       plus the enemy close-up.
 - [x] Dev server verified: `npm run dev` → http://localhost:5178/.
+
+## Milestone 3 — user-reported additions (mid-M3)
+
+- [x] **USER BUG: background mountains/dunes flicker + lighting issues.** DIAGNOSED
+      by measurement, not guessed. New `tools/flicker.mjs`: parks the camera and
+      measures inter-frame difference, then sweeps it and measures the SECOND
+      temporal difference (smooth pan ⇒ smooth change; anything that FLIPS spikes
+      it), with post-processing on and off.
+      · Static camera: **0.000/255 on both paths** — no instability at rest.
+      · Under a pan the terrain BODY is stable and only the SILHOUETTE lights up,
+        which **disproves z-fighting and shadow acne** (both make noise ACROSS a
+        surface, not along its outline). Neither was "fixed".
+      Causes found: (A) tessellation — `RingGeometry(28,240,192,22)` = 1.875°/seg
+      = a 3.3 m facet at 100 m, so `computeVertexNormals` produced hard shading
+      breaks (visible as straight-edged triangular facets down the dune flank in
+      `shots/diagnostics/terrain_before_after.png`) and straight silhouette
+      segments that crawl. Raised to **384×40**; A/B confirms continuous shading.
+      (B) postfx silently discards hardware MSAA (`antialias:true` is
+      default-framebuffer only; EffectComposer allocates `samples:0`) — REAL, and
+      **measured at +11.7 ms for 4× / +7.1 ms for 2× on a half-float target**, so
+      it does NOT ship; the line stays at 0 with the cost table beside it.
+      (C) shadow camera was ±32 m while the berm starts at r=28 m with
+      `receiveShadow`, and a 6 m wall at 22° throws a ~14.9 m shadow — a hard
+      circular lighting discontinuity at r=32. Widened to ±40 m.
+      **The probe's own first version called `killAll()`, which WINS the mission
+      and puts a static DOM panel over the measured band — it reported a
+      reassuring 0.00%.** Recorded in DECISIONS §35.
+- [x] **USER REQUEST: see-through scope.** New Tripo generation `carbine_optic`
+      (70 credits) with a prompt restating the aperture six ways ("HOLLOW OPEN
+      TUBE", "the hole is empty air"). New `assetgen/aperture.py` fires a ray grid
+      down the sight line and counts triangle crossings — the only way to tell a
+      hole from a dark recess. **Verdict: BOTH generations SOLID, zero clear rays
+      through the optic core.** Tripo models the shape of a sight, not a hole.
+      · The probe's FIRST verdict was wrong (it counted clear rays in the corners
+        of a rectangular sample box and declared the solid tube OPEN). Criterion
+        rewritten to test the centre of the MATERIAL. Third instance in this build
+        of a measurement that was true and useless.
+      · Fallback implemented as briefed: **generated base + authored functional
+        optic.** `stripRegion()` deletes the 776 generated optic triangles; an
+        authored torus housing + tube + front ring + mount post replaces them,
+        with **nothing in the middle** — not even a transparent lens. The
+        viewmodel is drawn over the already-rendered world, so the aperture IS
+        the absence.
+      · TWO region rules, deliberately: `optic` (v>0.80) defines the optical AXIS
+        and stays tight; `opticStrip` (v>0.72, wider) only removes material.
+      · New assertion: `probeSightLine()` raycasts −Z from the viewmodel camera
+        (the real ADS sight line) and the suite asserts it is CLEAR.
+      Recorded in DECISIONS §36.
+- [x] Boot path `?postfx=0` added — post-processing off is now reachable from
+      COLD, not only via the in-session toggle, with its own assertions.
+- [x] **68/68 assertions ALL GREEN.** carbine fitted (13,734 verts, 776 optic tris
+      stripped, 777 mag tris split) · aperture clear · ADS optic 0.01 px from
+      centre · viewmodel 5.77% hip / 8.22% ADS · postfx ON 16.67 ms = locked 60 ·
+      AO 28.9 ms → stays OFF · cold no-postfx boot clean.
+- [ ] **M4 — MULTIPLAYER: NOT STARTED, by instruction** (after the M3 gate).
+      Brief on file: co-op 2-4 players vs the AI; authoritative Node/TS WebSocket
+      server in `server/`, one command alongside vite; server-authoritative enemy
+      AI + hit validation; client prediction for own movement + snapshot
+      interpolation (10-15 Hz) for remotes; room-code join; remote players use the
+      existing soldier avatar + name tags; shared kill feed; single-player must
+      keep working fully offline with the server absent; smoke extended to boot
+      server + two headless clients and assert they see each other move and share
+      enemy state.
