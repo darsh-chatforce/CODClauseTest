@@ -382,3 +382,19 @@ instruction.
 - [x] `DECISIONS.md` extended with §26-§34, closing with the **DISSECTION SUMMARY
       — top 10 divergences**, each phrased as a concrete pipeline change. That
       section is the primary deliverable of the exercise.
+- [x] `tools/clip.mjs` — 6 s recorded run (`shots/run.gif`, 2.8 MB), driven by the
+      SAME competent-player bot as `balance.mjs` so what the clip shows and what
+      the win-rate measurement measured are the same thing. First version used
+      `page.screenshot()` in a loop and managed 2.6 fps (a slideshow of a fight);
+      switched to CDP `Page.startScreencast` and captures at ~60 fps real-time.
+      Playback duration is DERIVED from the measured capture rate, not assumed.
+- [x] **M3 VERIFIED: 64/64 assertions, ALL GREEN.** Key numbers: carbine fitted
+      (13,734 verts, 0.86 m, optic local (0.000000, 0.093000), 777 mag triangles)
+      · **ADS optic lands 0.01 px from screen centre** · viewmodel 5.89% hip /
+      8.76% ADS (budget 15%) · frame luminance 0.172 postfx-ON / 0.199 postfx-OFF,
+      Δ0.026, 0.0% clipped white, 1.5% crushed black · postfx 16.67 ms = locked 60
+      · enclosure 0 leaks · AI doctrine 0 violations, all six states observed ·
+      audio graph live · 0 console errors or warnings.
+- [x] Fresh 7-screenshot set captured into `shots/` at the same angles as M1/M2
+      plus the enemy close-up.
+- [x] Dev server verified: `npm run dev` → http://localhost:5178/.
