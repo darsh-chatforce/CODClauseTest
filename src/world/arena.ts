@@ -560,8 +560,26 @@ function buildGround(group: THREE.Group, collision: CollisionWorld, assets: Asse
 function buildBerm(group: THREE.Group, assets: Assets): void {
   const inner = ARENA.bermInnerRadius;
   const outer = ARENA.bermOuterRadius;
-  const segments = 192;
-  const rings = 22;
+  // TESSELLATION IS THE FIX FOR BOTH REPORTED SYMPTOMS (DECISIONS §35).
+  //
+  // At M2's 192 × 22 this ring spans 360° and 212 m of radius, so one quad is
+  // 1.875° wide — a 3.3 m facet at 100 m. Two consequences, and the bug report
+  // named both:
+  //
+  //  · FLICKER. The berm's only high-frequency feature is its own SILHOUETTE
+  //    against a bright sky, and that silhouette was a chain of long straight
+  //    facet edges. Under a pan each edge crosses pixel boundaries as a unit and
+  //    pops. The measured speckle map (`tools/flicker.mjs`) shows this exactly:
+  //    the terrain BODY is stable and the outline is a bright fringe.
+  //  · "LIGHTING ISSUES". `computeVertexNormals()` on facets that large produces
+  //    a normal field with visible radial banding and no smooth terminator, so a
+  //    dune lit by a 22° sun reads as a flat brown blob with streaks in it.
+  //
+  // Doubling round and nearly doubling radially costs ~31 k triangles on ONE
+  // decorative mesh with no collider — cheap at a locked 60 fps — and attacks
+  // the actual cause rather than dressing it with fog.
+  const segments = 384;
+  const rings = 40;
 
   const geo = new THREE.RingGeometry(inner, outer, segments, rings);
   const pos = geo.attributes.position as THREE.BufferAttribute;

@@ -1938,3 +1938,98 @@ the GPU, whether the artifact is usable, whether the optional stage is affordabl
 whether the mission is winnable — from *opinions a scorer holds* into
 **measurements a gate enforces**. Every one of them is cheap. Every one of them
 is a number this build already computes.
+
+---
+
+## 35. The terrain flicker: diagnosed, not guessed
+
+**The report** (from playing the build): *"the background mountains/dunes have
+lighting issues and FLICKERING."*
+
+Three plausible causes were suggested up front — z-fighting between overlapping
+terrain shells, shadow acne at the low sun angle, and the berm falling outside
+the shadow camera's frustum. Two of the three turned out to be wrong, and the
+way they were ruled out is the point.
+
+### 35.1 A screenshot cannot show flicker, so the probe measures motion
+
+`tools/flicker.mjs` parks the camera, captures N frames, and measures the
+inter-frame difference; then it sweeps the camera in equal tiny yaw steps and
+measures the **second temporal difference**, `|I(t+1) − 2·I(t) + I(t−1)|`. Under
+a smooth pan a correct renderer changes smoothly, so the second difference stays
+small; anything that *flips between two states* frame to frame spikes it. It runs
+the whole thing with post-processing on and off, which turns "it flickers" into
+"it flickers on this path and not that one".
+
+Two findings, in order:
+
+1. **Static camera: 0.000/255 inter-frame difference on both render paths.** No
+   temporal instability at rest at all. That rules out anything self-oscillating
+   and says the artifact is motion-dependent — which z-fighting, shadow acne and
+   texture aliasing all are.
+2. **Under a pan the terrain BODY is stable and only its SILHOUETTE lights up.**
+   The saved speckle map (`shots/diagnostics/flicker_speckle_map.png`) shows the
+   dune interior almost black — i.e. changing smoothly — with a bright coloured
+   fringe tracing the ridgeline against the sky.
+
+**A stable body is a direct disproof of z-fighting and of shadow acne.** Both
+produce noise *across a surface*, not along its outline. Neither was the cause,
+and neither was "fixed" — which matters, because applying a depth-bias or a
+polygon-offset tweak here would have been a plausible-looking change that fixed
+nothing and made the shadow terminator worse.
+
+### 35.2 A probe that measured a menu
+
+Worth recording as its own lesson. The first version of this probe called
+`killAll()` to remove the only legitimately moving objects in frame — and
+clearing the compound **wins the mission**, which puts a large static DOM panel
+over the middle of the screen. It duly reported a beautifully stable 0.00%. The
+probe was measuring the stability of an end screen.
+
+*The instrument has to be checked against the thing it is pointed at.* This is a
+smaller cousin of §27.3's sky measurement: a number that is true about the wrong
+region is worth less than no number, because it carries conviction.
+
+### 35.3 What it actually was: two causes, one visible in a still
+
+**Cause A — coarse tessellation (both symptoms).** The berm was a
+`RingGeometry(28, 240, 192, 22)`. That is 1.875° per segment: a **3.3 m facet at
+100 m**, over a mesh whose radius spans 212 m. Two consequences, and the bug
+report named both:
+
+- *"Lighting issues"* — `computeVertexNormals()` over facets that large produces
+  hard shading breaks. The A/B in `shots/diagnostics/terrain_before_after.png`
+  shows it plainly: in the BEFORE frame the dune carries a straight-edged
+  triangular shading break down its left flank and another on its right
+  shoulder. That is not a lighting bug, it is the mesh.
+- *"Flickering"* — those same facet boundaries are visible shading
+  discontinuities, and along with the straight-line silhouette segments they
+  crawl across pixels as the camera pans.
+
+Raised to **384 × 40**. ~31 k triangles on one decorative, collider-free mesh,
+which is nothing at a locked 60 fps, and the AFTER frame's dune has a continuous
+gradient and a rounded outline.
+
+**Cause B — post-processing was silently discarding hardware MSAA.**
+`new WebGLRenderer({ antialias: true })` antialiases only the **default
+framebuffer**. The moment M3 started rendering the scene into an
+`EffectComposer` target that flag became dead, and `EffectComposer` allocates its
+targets with `samples: 0`. So turning post-processing on quietly removed 4× MSAA
+and left SMAA — a morphological filter with no temporal component — to hold a
+high-contrast silhouette on its own. `renderTarget1/2.samples = 4` puts it back,
+and is re-asserted after `setSize` because that reallocates the storage.
+
+This one is a genuine M3 regression that no assertion could see: the frame was
+still readable, still the right exposure, still 60 fps. It is exactly the class
+of defect §34 item 5 is about — *the code was right and the frame was wrong.*
+
+**And the one suggested cause that was half-right.** The shadow camera was
+`ARENA.size * 0.8` = ±32 m while the berm starts at r = 28 m with
+`receiveShadow = true`, and a 6 m wall under a 22° sun throws a ~14.9 m shadow —
+so wall shadows genuinely reach r ≈ 35 m, onto terrain outside the frustum.
+three returns "fully lit" outside it, so there was a hard circular discontinuity
+in the terrain's lighting at exactly r = 32 m, with boundary fragments flipping
+as the camera moved. Widened to ±40 m (3.9 cm/texel instead of 3.1 cm at 2048²).
+This was real, it was contributing, and it was *not* the main cause — the berm
+"flickering in and out of the shadow frustum" would have shown as instability
+across the surface, which the speckle map explicitly rules out.

@@ -199,8 +199,8 @@ export const ENEMY = {
    * is bought with damage, which the player can respond to, not with information,
    * which they cannot.
    */
-  damage: 13,
-  headshotDamage: 22,
+  damage: 12,
+  headshotDamage: 20,
   /** Aim cone half-angle in degrees; larger = more dodgeable. Deliberately NOT
    *  a difficulty knob — see the note above. */
   spreadDeg: 2.6,

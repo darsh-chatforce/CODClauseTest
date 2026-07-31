@@ -880,6 +880,42 @@ async function main() {
         `${costOff.meanMs.toFixed(2)} ms (${costOff.fps.toFixed(1)} fps)`,
     );
 
+    // ---- M3: a COLD boot on the no-post-processing path -------------------
+    //
+    // Toggling post-processing off mid-session proves the direct render path
+    // draws. It does NOT prove the game comes up on it, because by then the
+    // composer has already been constructed and its render targets allocated.
+    // The low-end entry point is `?postfx=0`, and it deserves its own page load.
+    console.log('\n== COLD BOOT, POST-PROCESSING OFF ==');
+    const coldErrors = [];
+    const cold = await browser.newPage();
+    cold.on('pageerror', (e) => coldErrors.push(String(e)));
+    cold.on('console', (m) => {
+      if (m.type() === 'error' || m.type() === 'warning') coldErrors.push(`${m.type()}: ${m.text()}`);
+    });
+    await cold.setViewport(VIEWPORT);
+    await cold.goto(`${base}?postfx=0`, { waitUntil: 'load', timeout: 30000 });
+    await cold.waitForFunction(() => window.__FPS__?.ready === true, { timeout: 20000 });
+    await cold.evaluate(() => {
+      window.__FPS__.start();
+      window.__FPS__.invulnerable(true);
+    });
+    await wait(900);
+    const coldState = await cold.evaluate(() => window.__FPS__.state());
+    const coldLum = await cold.evaluate(() => window.__FPS__.frameStats());
+    check(
+      'boots with ?postfx=0 into the direct render path',
+      coldState.phase === 'playing' && coldState.postfx.enabled === false,
+      `phase=${coldState.phase} postfx.enabled=${coldState.postfx.enabled}`,
+    );
+    check(
+      'cold no-postfx boot renders a readable frame',
+      coldLum.mean > 0.06 && coldLum.mean < 0.62 && coldLum.dark < 0.2,
+      `mean ${coldLum.mean.toFixed(3)}, ${(coldLum.dark * 100).toFixed(1)}% black`,
+    );
+    check('cold no-postfx boot is clean', coldErrors.length === 0, coldErrors.slice(0, 2).join(' | '));
+    await cold.close();
+
     // ---- console hygiene --------------------------------------------------
     console.log('\n== HYGIENE ==');
     check('no uncaught page exceptions during play', pageErrors.length === 0, pageErrors.join(' | '));

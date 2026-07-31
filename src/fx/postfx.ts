@@ -321,6 +321,18 @@ export class PostFx {
     this.bloomComposer.addPass(this.bloomPass);
 
     this.finalComposer = new EffectComposer(renderer);
+    // MSAA ON THE COMPOSER TARGETS — a regression fix, not an upgrade.
+    //
+    // `new WebGLRenderer({ antialias: true })` only antialiases the DEFAULT
+    // framebuffer. The moment the scene is rendered into a composer render
+    // target instead, that flag does nothing and `EffectComposer` allocates its
+    // targets with `samples: 0` — so switching post-processing ON silently threw
+    // hardware multisampling away and left SMAA to carry the whole load. SMAA is
+    // a morphological filter with no temporal component; on a huge smooth
+    // silhouette against a bright sky it reduces the stair-stepping but not the
+    // crawl. This puts the 4× MSAA back underneath it.
+    this.finalComposer.renderTarget1.samples = 4;
+    this.finalComposer.renderTarget2.samples = 4;
     this.finalComposer.addPass(this.scenePass);
     this.finalPass = new ShaderPass(FinalShader);
     this.finalPass.uniforms.tBloom.value = this.bloomComposer.readBuffer.texture;
@@ -334,6 +346,10 @@ export class PostFx {
     this.height = Math.max(1, Math.floor(height * pixelRatio));
     this.finalComposer.setSize(width, height);
     this.finalComposer.setPixelRatio(pixelRatio);
+    // `setSize` reallocates the targets' storage, so the sample count is
+    // re-asserted rather than assumed to survive.
+    this.finalComposer.renderTarget1.samples = 4;
+    this.finalComposer.renderTarget2.samples = 4;
     const bw = Math.max(1, Math.floor(width * 0.5));
     const bh = Math.max(1, Math.floor(height * 0.5));
     this.bloomComposer.setSize(bw, bh);
@@ -358,14 +374,6 @@ export class PostFx {
       this.gtao = g;
     }
     if (this.gtao) this.gtao.enabled = on;
-  }
-
-  setVignette(v: number): void {
-    this.finalPass.uniforms.uVignette.value = v;
-  }
-
-  setExposure(v: number): void {
-    this.finalPass.uniforms.uExposure.value = v;
   }
 
   /**

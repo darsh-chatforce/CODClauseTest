@@ -165,6 +165,15 @@ export class Game {
       this.viewmodel.camera,
     );
 
+    // BOOTING WITH POST-PROCESSING OFF IS ITS OWN PATH, so it is reachable
+    // without first booting with it on. `?postfx=0` is not a debug flag — it is
+    // the low-end entry point, and `tools/smoke.mjs` loads a second page with it
+    // to prove the game comes up on the direct render path from cold. A settings
+    // toggle that can only be reached after the composer has already built its
+    // render targets is not evidence that the game works without them.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('postfx') === '0') this.postfx.enabled = false;
+
     this.input = new Input(canvas);
     this.player = new Player(this.collision);
 
@@ -181,7 +190,7 @@ export class Game {
           id: 'postfx',
           label: 'POST-PROCESSING',
           note: '· bloom, grade, SMAA',
-          initial: true,
+          initial: this.postfx.enabled,
           onChange: (v) => this.setPostFx(v),
         },
         {
@@ -541,7 +550,10 @@ export class Game {
       if (this.stepDistance >= stride) {
         this.stepDistance -= stride;
         this.stepLeft = !this.stepLeft;
-        this.audio.footstep(!this.player.crouching);
+        // Alternate the foot: a small pan and pitch offset per side. Two
+        // identical footsteps in a row read as one sound played twice, which is
+        // exactly what a footstep loop must not sound like.
+        this.audio.footstep(!this.player.crouching, 0, this.stepLeft ? -0.5 : 0.5);
       }
     } else {
       this.stepDistance = Math.min(this.stepDistance, 0.55);

@@ -238,7 +238,28 @@ export function buildEnvironment(scene: THREE.Scene): EnvironmentHandles {
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.035;
   const c = sun.shadow.camera;
-  const R = ARENA.size * 0.8;
+  /**
+   * THE SHADOW CAMERA MUST COVER EVERY SURFACE A SHADOW CAN LAND ON, not just
+   * the playable footprint. (DECISIONS §35 — this is one of two causes of the
+   * reported terrain flicker.)
+   *
+   * M2 sized this at `ARENA.size * 0.8` = ±32 m, which covers the 40 m compound
+   * comfortably. But the terrain berm starts at r = 28 m and is
+   * `receiveShadow = true`, and a 6 m perimeter wall under a 22° sun throws a
+   * 6/tan(22°) ≈ 14.9 m shadow — so wall shadows genuinely reach r ≈ 35 m, onto
+   * berm that sits OUTSIDE the shadow frustum.
+   *
+   * three's shadow shader returns "fully lit" for any fragment outside the
+   * frustum, so the result was a hard circular discontinuity in the terrain's
+   * lighting at exactly r = 32 m, with fragments right on the boundary flipping
+   * between shadowed and lit as the camera moved. That reads precisely as
+   * "the dunes have lighting issues and flicker".
+   *
+   * ±40 m covers the compound plus the whole band wall shadows can reach. The
+   * cost is shadow-map density: 2048² over 80 m is 3.9 cm/texel instead of
+   * 3.1 cm, which is invisible at the scales this level uses.
+   */
+  const R = ARENA.size;
   c.left = -R;
   c.right = R;
   c.top = R;
