@@ -461,3 +461,17 @@ instruction.
       keep working fully offline with the server absent; smoke extended to boot
       server + two headless clients and assert they see each other move and share
       enemy state.
+- [x] **Difficulty re-measured, and the MEASUREMENT ran out of resolution.**
+      damage 13 → 12 scored **53.1%** (32 runs) — WORSE than the same-or-harder
+      build's 62.5% (24) and 57.5% (40). A change that can only make the mission
+      easier cannot lower the win rate, so that is noise. At n=32 the standard
+      error on a proportion near 0.5 is ~8.8 points and the 95% interval is ~35
+      points wide, against a target band 10 points wide; resolving it would need
+      ~400 runs per configuration. **Shipped: damage 13 / headshot 22 / burst 4,
+      pooling 38 wins in 64 runs = 59.4%, 95% CI ≈ [47%, 71%]** — the
+      best-supported estimate, whose interval contains the band. `balance.mjs`
+      now prints the CI and refuses to call a band it cannot resolve. DECISIONS
+      §32.1, and it amends dissection item 9: a plan must state the band AND the
+      sample size, and the tool must report an interval, not a bare percentage.
+- [x] **FINAL: 68/68 assertions ALL GREEN**, fresh 7-shot set, dev server 200 on
+      index + `/src/main.ts` + soldier/carbine GLBs + sky + textures.

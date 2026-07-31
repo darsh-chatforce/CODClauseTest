@@ -1620,7 +1620,45 @@ The tuning history is the deliverable:
 |---|---|---:|---:|---:|
 | M2 as shipped | damage 9, burst 3 | 16 | **87.5%** | 42 |
 | M3 step 1 | damage 9 → 13, headshot 15 → 22 | 20 | **75.0%** | 54 |
-| M3 shipped | + burst 3 → 4 | 24 | **62.5%** | 48 |
+| M3 step 2 | + burst 3 → 4 | 24 | **62.5%** | 48 |
+| — confirmation of the same build | (no change) | 40 | **57.5%** | 48 |
+| M3 step 3 — *rejected* | damage 13 → 12, headshot 22 → 20 | 32 | **53.1%** | 52 |
+| **shipped** | damage 13, headshot 22, burst 4 | **64 pooled** | **59.4%** | 48 |
+
+### 32.1 The measurement ran out of resolution, and that is the finding
+
+Step 3 is the interesting row. Reducing enemy damage from 13 to 12 — a change
+that can only make the mission *easier* — measured **53.1%**, i.e. **worse** than
+the 62.5% and 57.5% recorded for the harder build. That is not a real effect. It
+is noise, and it is the point at which this method stops being able to answer the
+question being asked of it.
+
+The arithmetic is unforgiving. A win rate is a binomial proportion, so at
+n = 32 the standard error is √(p(1−p)/n) ≈ **8.8 points**, and the 95% interval
+on 17/32 runs is roughly **[36%, 70%]**. The requested band is *ten points wide*.
+Resolving a 10-point band to 95% confidence needs a standard error near 2.5
+points, which is **n ≈ 400 runs** — about four hours of wall-clock per
+configuration, per tuning step.
+
+So the honest reporting is:
+
+- The shipped configuration is **damage 13 / headshot 22 / burst 4**, pooling
+  **38 wins in 64 runs = 59.4%**, 95% CI ≈ [47%, 71%]. That is the best-supported
+  estimate available and its interval contains the whole target band.
+- It sits a fraction below the band's lower edge as a point estimate, and the
+  data cannot distinguish it from 65%.
+- The damage-12 build was **rejected on the evidence** — not because it measured
+  worse (that reading is noise) but because it has half the samples behind it and
+  a worse point estimate, so there is no basis for preferring it.
+
+**What this costs the pipeline recommendation.** §34 item 9 says to add a
+bot-playtest tool and make a target band part of the plan. That stands, with a
+correction learned here: **the plan must state the band AND the sample size, and
+the tool must report a confidence interval rather than a bare percentage.** A
+win rate quoted without n is exactly the sort of number that gets tuned against
+until it reads correctly, which is fitting to noise. The tool prints the run
+count; it should print the interval too, and a build should not be allowed to
+claim it hit a band it cannot resolve.
 
 The step-1 target came from arithmetic rather than from taste: damage taken on a
 win was 58.5 ± 18 hp, so a ~1.45× scaling puts the mean close enough to 100 that

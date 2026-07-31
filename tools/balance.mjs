@@ -240,15 +240,34 @@ async function main() {
   const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
   const rate = won.length / results.length;
 
-  console.log(`\n  runs           ${results.length}`);
-  console.log(`  WIN RATE       ${(rate * 100).toFixed(1)}%   (${won.length} won, ${lost.length} lost, ${timeout.length} timed out)`);
+  // A WIN RATE WITHOUT A SAMPLE SIZE IS A NUMBER YOU TUNE AGAINST UNTIL IT
+  // READS CORRECTLY, which is fitting to noise. At n = 32 the standard error on
+  // a proportion near 0.5 is ~8.8 points and the 95% interval is ~35 points
+  // wide — wider than the 10-point band this build was asked to hit. So the
+  // interval is printed next to the rate, every time, and the tool says outright
+  // when the sample cannot resolve the band.
+  const n = results.length;
+  const se = Math.sqrt((rate * (1 - rate)) / Math.max(1, n));
+  const lo = Math.max(0, rate - 1.96 * se);
+  const hi = Math.min(1, rate + 1.96 * se);
+
+  console.log(`\n  runs           ${n}`);
+  console.log(`  WIN RATE       ${(rate * 100).toFixed(1)}%  95% CI [${(lo * 100).toFixed(1)}%, ${(hi * 100).toFixed(1)}%]` +
+    `   (${won.length} won, ${lost.length} lost, ${timeout.length} timed out)`);
   console.log(`  mean kills     ${mean(results.map((r) => r.kills)).toFixed(2)} / 6`);
   console.log(`  mean accuracy  ${(mean(results.map((r) => r.accuracy)) * 100).toFixed(1)}%`);
   console.log(`  win time       ${mean(won.map((r) => r.time)).toFixed(1)} s`);
   console.log(`  hp on a win    ${mean(won.map((r) => r.health)).toFixed(0)} / 100`);
   console.log(`  kills on loss  ${mean(lost.map((r) => r.kills)).toFixed(2)} / 6`);
   const band = rate >= 0.6 && rate <= 0.7;
-  console.log(`\n  target band 60-70%: ${band ? 'IN BAND' : 'OUT OF BAND'}`);
+  const resolvable = 1.96 * se <= 0.05; // half the band's width
+  console.log(`\n  target band 60-70%: ${band ? 'IN BAND' : 'OUT OF BAND'} (point estimate)`);
+  if (!resolvable) {
+    const need = Math.ceil((rate * (1 - rate)) / Math.pow(0.05 / 1.96, 2));
+    console.log(`  NOTE: n=${n} CANNOT resolve a 10-point band — the 95% interval is ` +
+      `${((hi - lo) * 100).toFixed(0)} points wide. ~${need} runs would be needed.`);
+    console.log('  Treat the point estimate as indicative, not as a pass/fail.');
+  }
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
