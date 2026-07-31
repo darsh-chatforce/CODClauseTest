@@ -67,11 +67,19 @@ async function main() {
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: process.argv.includes('--headful') ? false : 'new',
-    // VSYNC OFF. Every configuration pins to exactly 16.67 ms with vsync on,
-    // which proves "it holds 60" and tells you nothing about how much headroom
-    // is left — and headroom is the whole question for an optional AO pass.
+    // VSYNC STAYS ON, and `--disable-frame-rate-limit` is deliberately NOT here.
+    //
+    // Uncapping looks like the way to measure headroom, and it was tried: it
+    // makes the render loop starve the compositor, so `Page.captureScreenshot`
+    // times out and the frame-luminance probe samples a half-composited canvas
+    // (24% crushed black on a frame that measures 1.5% with vsync on). The
+    // measurement destroyed the thing it was measuring.
+    //
+    // The capped numbers answer the question anyway, because the question is
+    // "does it hold 60", not "how fast could it go": every configuration that
+    // pins to 16.67 ms mean / ~17 ms p95 is comfortably inside budget, and one
+    // that does not — AO, at 21.7 ms mean and 33.4 ms p95 — is visibly not.
     args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--hide-scrollbars', '--mute-audio',
-      '--disable-gpu-vsync', '--disable-frame-rate-limit',
       `--window-size=${VIEWPORT.width},${VIEWPORT.height}`],
     defaultViewport: VIEWPORT,
   });
