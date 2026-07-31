@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { LAYER } from '../config';
+import { markBloom } from '../fx/postfx';
 import { SIGHT_HEIGHT } from './viewmodel';
 import type { Assets } from '../world/assets';
 
@@ -64,6 +65,8 @@ const REGION = {
   bore: { v: [0.0, 1.0], w: [0.0, 0.08] },
   optic: { v: [0.8, 1.0], w: [0.38, 0.66] },
   magazine: { v: [0.0, 0.45], w: [0.4, 0.62] },
+  /** The pistol grip — the point that goes in a soldier's hand. */
+  grip: { v: [0.0, 0.45], w: [0.63, 0.8] },
 } as const;
 
 export interface CarbineFit {
@@ -187,6 +190,35 @@ export function fitCarbine(assets: Assets): CarbineFit | null {
   // ---- 4. muzzle on the bore axis -----------------------------------------
   const muzzle = new THREE.Vector3(boreCentre.x, boreCentre.y, box.min.z + shift.z);
 
+  // ---- 4b. the RETICLE ----------------------------------------------------
+  // The generated optic is a housing, not an optic: Tripo modelled the shape of
+  // a red dot and there is no red dot in it. Aiming down an empty tube is not a
+  // sight picture, it is an obstruction — so the reticle is authored, at the
+  // MEASURED optical axis, which is the one place it can go and still be true.
+  //
+  // `depthTest: false` is deliberate and is what real shooters do: a reticle is
+  // a projected image on the shooter's eye, not a physical object inside the
+  // tube, and depth-testing it against a lumpy generated housing means it
+  // disappears at exactly the moment it is needed. It is 3 mm across, so the
+  // cost of it showing through the receiver at hip is nothing.
+  const dot = new THREE.Mesh(
+    new THREE.CircleGeometry(0.0032, 12),
+    new THREE.MeshBasicMaterial({
+      color: 0xff4a2a,
+      transparent: true,
+      opacity: 0.96,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  dot.name = 'carbine-reticle';
+  dot.position.copy(opticCentre);
+  dot.renderOrder = 20;
+  dot.frustumCulled = false;
+  markBloom(dot);
+  group.add(dot);
+
   // ---- 5. split the magazine out of the single generated mesh -------------
   const magazine = splitMagazine(model, bounds);
   let magazineTriangles = 0;
@@ -217,7 +249,9 @@ export function fitCarbine(assets: Assets): CarbineFit | null {
     // that no screenshot review would have flagged as anything but "the gun is
     // gone".
     const m = o as THREE.Mesh;
-    if (m.isMesh) {
+    // The reticle is authored, not generated — it must not be dimmed by the
+    // material pass meant for Tripo's PBR.
+    if (m.isMesh && o.name !== 'carbine-reticle') {
       m.castShadow = false;
       m.receiveShadow = false;
       // A near-camera object whose bounds are computed once and then animated by
@@ -354,6 +388,38 @@ export function buildWorldCarbine(assets: Assets, lengthMetres: number): THREE.O
   const size = box.getSize(new THREE.Vector3());
   const scale = size.z > 1e-5 ? lengthMetres / size.z : 1;
   model.scale.multiplyScalar(scale);
+  model.updateMatrixWorld(true);
+
+  // ---- re-origin ON THE PISTOL GRIP ---------------------------------------
+  // The returned object's ORIGIN is the point that goes in the hand, which makes
+  // attaching it a matter of parenting to the hand bone with a small palm offset
+  // rather than of discovering, by trial, the translation that happens to put a
+  // model-centre origin in roughly the right place. The grip is found by the
+  // same normalised region rule the viewmodel fit uses.
+  const fitted = new THREE.Box3().setFromObject(model, true);
+  const bounds: Bounds = { min: fitted.min.clone(), size: fitted.getSize(new THREE.Vector3()) };
+  const gripBox = new THREE.Box3();
+  const q = new THREE.Vector3();
+  model.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || !m.geometry) return;
+    const pos = m.geometry.getAttribute('position');
+    if (!pos) return;
+    for (let i = 0; i < pos.count; i++) {
+      q.fromBufferAttribute(pos as THREE.BufferAttribute, i).applyMatrix4(m.matrixWorld);
+      if (inRegion(q, bounds, REGION.grip)) gripBox.expandByPoint(q);
+    }
+  });
+  // The hand closes around the TOP of the grip, not its centroid.
+  const grip = gripBox.isEmpty()
+    ? new THREE.Vector3(0, 0, lengthMetres * 0.2)
+    : new THREE.Vector3(
+        gripBox.getCenter(q).x,
+        gripBox.max.y,
+        gripBox.getCenter(q).z,
+      );
+  model.position.sub(grip);
+
   model.traverse((o) => {
     o.layers.set(LAYER.WORLD);
     const m = o as THREE.Mesh;
@@ -372,7 +438,10 @@ export function buildWorldCarbine(assets: Assets, lengthMetres: number): THREE.O
   // -Z extreme on the centreline rather than re-running the full region fit.
   const muzzle = new THREE.Object3D();
   muzzle.name = 'muzzle';
-  muzzle.position.set(0, 0, -lengthMetres * 0.5);
+  // Relative to the GRIP origin. The lateral bore offset is a couple of
+  // millimetres and invisible at engagement range, so this takes the -Z extreme
+  // on the centreline rather than re-running the full region fit.
+  muzzle.position.set(0, 0, -lengthMetres * 0.5 - grip.z);
   wrap.add(muzzle);
   return wrap;
 }

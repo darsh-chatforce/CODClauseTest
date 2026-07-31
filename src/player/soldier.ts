@@ -93,15 +93,26 @@ const MAT_VISOR_HOUSING = new THREE.MeshStandardMaterial({
   metalness: 0.05,
 });
 
-/** Where the carbine sits in the right hand, in metres/radians of hand-bone
- *  space. Tuned against the rig's pistol-grip aim pose — see `attachWeapon`. */
+/**
+ * Where the carbine sits in the right hand.
+ *
+ * `x/y/z` are METRES of palm offset from the hand bone's origin (the weapon's
+ * own origin is its pistol grip — see `buildWorldCarbine`), and `rx/ry/rz` are
+ * a deliberate CANT applied on top of the derived orientation, not the
+ * orientation itself. See `attachWeapon` for why that distinction is the whole
+ * point: the big rotation is computed, and only the small stylistic one is a
+ * number somebody chose.
+ */
 const WEAPON_MOUNT = {
-  x: 0.02,
-  y: -0.04,
-  z: 0.12,
-  rx: 0.06,
+  x: 0.0,
+  y: -0.02,
+  z: 0.03,
+  /** Muzzle a few degrees down — a carried weapon points slightly below the
+   *  eyeline, and the rig's pistol-grip aim pose already carries the hands high. */
+  rx: 0.12,
   ry: 0.0,
-  rz: 0.0,
+  /** A slight roll so the receiver is not perfectly vertical. */
+  rz: 0.09,
 } as const;
 
 export class RiggedSoldier implements AvatarModel {
@@ -356,6 +367,7 @@ export class RiggedSoldier implements AvatarModel {
   private attachWeapon(root: THREE.Object3D, weapon: THREE.Object3D): void {
     const hand = root.getObjectByName('hand_r') ?? findBone(root, 'hand_r');
     if (!hand) return;
+    root.updateWorldMatrix(true, true);
     hand.updateWorldMatrix(true, false);
     const perUnit = new THREE.Vector3()
       .setFromMatrixColumn(hand.matrixWorld, 0)
@@ -371,7 +383,33 @@ export class RiggedSoldier implements AvatarModel {
       WEAPON_MOUNT.y * toBone,
       WEAPON_MOUNT.z * toBone,
     );
-    holder.rotation.set(WEAPON_MOUNT.rx, WEAPON_MOUNT.ry, WEAPON_MOUNT.rz);
+
+    // ---- THE MOUNT ORIENTATION IS DERIVED, NOT DIALLED IN -------------------
+    //
+    // The obvious way to seat a weapon on a hand bone is to guess three Euler
+    // angles, look at a screenshot, and adjust — and it is the wrong way twice
+    // over: the numbers end up meaning nothing, and they are silently wrong the
+    // moment the rig changes. The first pass here did exactly that and produced
+    // a soldier holding a carbine vertically across his chest.
+    //
+    // Nothing about the hand bone's own axes needs to be known. What IS known is
+    // where the weapon must END UP: barrel down the body's forward axis, optic
+    // up. So the required WORLD orientation is the model root's, turned 180°
+    // about Y (the carbine's muzzle is its -Z, the model's forward is its +Z),
+    // and the local rotation is whatever takes the hand bone there:
+    //
+    //     holderLocal = inverse(handWorld) · (rootWorld · Ry(π))
+    //
+    // Then, and only then, a small deliberate cant is added on top — a rifle
+    // held dead level looks like it is on a tripod.
+    const rootQuat = root.getWorldQuaternion(new THREE.Quaternion());
+    const flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+    const want = rootQuat.multiply(flip);
+    const handQuat = hand.getWorldQuaternion(new THREE.Quaternion()).invert();
+    holder.quaternion.copy(handQuat.multiply(want));
+    holder.rotateX(WEAPON_MOUNT.rx);
+    holder.rotateY(WEAPON_MOUNT.ry);
+    holder.rotateZ(WEAPON_MOUNT.rz);
     hand.add(holder);
     this.weaponMount = holder;
     this.muzzleMarker = weapon.getObjectByName('muzzle') ?? null;

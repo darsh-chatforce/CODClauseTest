@@ -195,6 +195,56 @@ async function main() {
       `${boot.arena.propsPlaced} props fitted to their colliders`,
     );
 
+    // ---- M3: the generated carbine ----------------------------------------
+    // M2 generated this weapon and deliberately did not ship it, because the ADS
+    // alignment is GEOMETRIC and a generated mesh arrives with its optic
+    // wherever the generator put it. These assert that the fit actually
+    // happened, rather than that the game silently fell back to the placeholder
+    // rifle — which would look almost identical in a screenshot and would mean
+    // the milestone's headline deliverable was not in the build.
+    check(
+      'generated carbine is fitted (not the placeholder fallback)',
+      boot.carbine.fitted === true,
+      `${boot.carbine.vertices} verts, ${boot.carbine.lengthMetres} m overall`,
+    );
+    check(
+      'carbine optic sits on the ADS axis in model space',
+      Math.abs(boot.carbine.opticX) < 1e-6 && Math.abs(boot.carbine.opticY - 0.093) < 1e-6,
+      `optic local (${boot.carbine.opticX.toFixed(6)}, ${boot.carbine.opticY.toFixed(6)}), SIGHT_HEIGHT 0.093`,
+    );
+    check(
+      'magazine split out of the single generated mesh (reload keeps its mag swap)',
+      boot.carbine.magazineTriangles > 100,
+      `${boot.carbine.magazineTriangles} triangles moved to their own object`,
+    );
+
+    // ---- M3: post-processing + audio come up -------------------------------
+    check('post-processing is on by default', boot.postfx.enabled === true);
+    check(
+      'ambient occlusion is OFF by default (it does not hold 60 fps — see DECISIONS §29)',
+      boot.postfx.ao === false,
+    );
+    // "Audio does not throw" is the assertion that matters: an AudioContext can
+    // fail for autoplay policy, for a missing device, or for a browser without
+    // the constructor, and none of those may take the game down with them.
+    const audioInit = await page.evaluate(() => {
+      try {
+        return { threw: false, ...window.__FPS__.initAudio() };
+      } catch (e) {
+        return { threw: true, ready: false, error: String(e) };
+      }
+    });
+    check(
+      'audio initialisation does not throw',
+      audioInit.threw === false,
+      audioInit.threw ? audioInit.error : 'no exception',
+    );
+    check(
+      'audio graph came up',
+      audioInit.ready === true,
+      audioInit.ready ? 'AudioContext + master/limiter/buses live' : `not ready: ${audioInit.error}`,
+    );
+
     // ---- start ------------------------------------------------------------
     console.log('\n== MISSION START ==');
     await page.evaluate(() => window.__FPS__.start());
@@ -387,6 +437,39 @@ async function main() {
     const adsCoverage = await page.evaluate(() => window.__FPS__.coverage());
     check('ADS pulls the FOV in', ads.camera.fov < hipFov - 15, `${hipFov.toFixed(1)}° → ${ads.camera.fov.toFixed(1)}°`);
     check('ADS tightens the cone', ads.weapon.spread < 0.15, `${ads.weapon.spread.toFixed(3)}°`);
+
+    // ---- M3: THE ADS ALIGNMENT, MEASURED ----------------------------------
+    //
+    // DECISIONS §2.5 has claimed since M1 that the ADS alignment is geometric
+    // rather than eyeballed. Until M3 that claim rested on the PLACEHOLDER rifle
+    // having been built with its optic at SIGHT_HEIGHT by hand — true, but
+    // circular. With a generated mesh in the slot the claim needs evidence, so
+    // the optic's optical axis is projected through the real viewmodel camera in
+    // the real settled ADS pose and must land on the crosshair.
+    //
+    // This is the assertion that fails if anyone ever "fixes" a misaligned sight
+    // by nudging the pose until it looks right — which is the exact move the
+    // whole file exists to prevent.
+    //
+    // MEASURE THE SETTLED POSE. The claim is about where the ADS pose PUTS the
+    // optic, and the pose is an exponentially-damped blend (`poseTau` 75 ms) with
+    // additive sway and bob layered on top. At the 450 ms above it is still ~0.3%
+    // short of its target, which put the optic 3.3 px off centre and failed this
+    // check the first time it ran. The residual is real and correct — a sight
+    // that snapped instantly would feel wrong — so the fix is to let the filter
+    // finish rather than to widen the tolerance to cover a transient. Six more
+    // time constants leaves under a millionth of the travel.
+    await wait(600);
+    const optic = await page.evaluate(() => window.__FPS__.optic());
+    const opticPx = Math.hypot(
+      (optic.x * VIEWPORT.width) / 2,
+      (optic.y * VIEWPORT.height) / 2,
+    );
+    check(
+      'ADS puts the optic ON the crosshair (geometric, not eyeballed)',
+      opticPx < 2.0,
+      `optic lands ${opticPx.toFixed(2)} px from screen centre (NDC ${optic.x.toFixed(5)}, ${optic.y.toFixed(5)})`,
+    );
     const adsShot = await shot('03_ads.png');
     await page.evaluate(() => window.__FPS__.key('ads', false));
     await wait(350);
@@ -736,6 +819,65 @@ async function main() {
         restarted.player.health === 100 &&
         restarted.weapon.mag === 30,
       `${restarted.phase} hostiles=${restarted.hostilesAlive} hp=${restarted.player.health}`,
+    );
+
+    // ---- M3: both render paths, and what they cost ------------------------
+    //
+    // The settings screen can turn post-processing off, which means the game has
+    // TWO render paths and a suite that only ever exercises one of them is
+    // testing half the build. Both must produce a readable frame, and the
+    // difference between them must be a look change rather than a different
+    // exposure — the tone map lives in two places now (three's, and the
+    // composer's final pass), and the whole reason the ACES code is copied
+    // verbatim is so those two agree.
+    console.log('\n== RENDER PATHS + FRAME COST ==');
+    await page.evaluate(() => {
+      window.__FPS__.restart();
+      window.__FPS__.invulnerable(true);
+      window.__FPS__.postfx(true);
+    });
+    await wait(700);
+    const lumOn = await page.evaluate(() => window.__FPS__.frameStats());
+    await page.evaluate(() => window.__FPS__.resetFrameCost());
+    await wait(2400);
+    const costOn = await page.evaluate(() => window.__FPS__.frameCost());
+
+    await page.evaluate(() => window.__FPS__.postfx(false));
+    await wait(700);
+    const lumOff = await page.evaluate(() => window.__FPS__.frameStats());
+    await page.evaluate(() => window.__FPS__.resetFrameCost());
+    await wait(2400);
+    const costOff = await page.evaluate(() => window.__FPS__.frameCost());
+    await page.evaluate(() => window.__FPS__.postfx(true));
+    await wait(400);
+
+    check(
+      'postfx ON renders a readable frame',
+      lumOn.mean > 0.06 && lumOn.mean < 0.62 && lumOn.bright < 0.12 && lumOn.dark < 0.2,
+      `mean ${lumOn.mean.toFixed(3)}, ${(lumOn.bright * 100).toFixed(1)}% white, ${(lumOn.dark * 100).toFixed(1)}% black`,
+    );
+    check(
+      'postfx OFF renders a readable frame',
+      lumOff.mean > 0.06 && lumOff.mean < 0.62 && lumOff.bright < 0.12 && lumOff.dark < 0.2,
+      `mean ${lumOff.mean.toFixed(3)}, ${(lumOff.bright * 100).toFixed(1)}% white, ${(lumOff.dark * 100).toFixed(1)}% black`,
+    );
+    check(
+      'the two render paths agree on exposure (postfx is a look, not a relight)',
+      Math.abs(lumOn.mean - lumOff.mean) < 0.09,
+      `on ${lumOn.mean.toFixed(3)} vs off ${lumOff.mean.toFixed(3)} — Δ${Math.abs(lumOn.mean - lumOff.mean).toFixed(3)}`,
+    );
+    // A FLOOR, not a target. The measured cost on the development machine (Apple
+    // M4, ANGLE/Metal) is 16.67 ms with post-processing on — vsync-capped, i.e.
+    // a locked 60 — and that number is recorded in DECISIONS §29. Asserting 60
+    // here would make the suite a benchmark of whatever machine runs it, which
+    // is how a useful gate turns into a flaky one; 33 ms catches a real
+    // regression (a stage rebuilt every frame, a shader falling back to
+    // software) without failing on a slower box.
+    check(
+      'post-processing holds a playable frame rate',
+      costOn.meanMs < 33,
+      `postfx ON ${costOn.meanMs.toFixed(2)} ms (${costOn.fps.toFixed(1)} fps) vs OFF ` +
+        `${costOff.meanMs.toFixed(2)} ms (${costOff.fps.toFixed(1)} fps)`,
     );
 
     // ---- console hygiene --------------------------------------------------
