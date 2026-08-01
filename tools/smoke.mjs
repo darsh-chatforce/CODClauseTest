@@ -26,6 +26,8 @@
 // =============================================================================
 
 import { createServer } from 'node:http';
+import { createServer as createSocketServer } from 'node:net';
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -89,6 +91,60 @@ function serveDist() {
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
   });
+}
+
+// ------------------------------------------------------- M4: the co-op server
+//
+// The multiplayer assertions boot the REAL server as a child process and drive
+// two REAL browser clients against it. Nothing here mocks a socket: if the
+// protocol, the tick loop or the interpolation is wrong, these fail.
+
+/**
+ * A port the OS says is free.
+ *
+ * Asking beats guessing. The server's own default is 8787, and hardcoding that
+ * here would make the suite fail for anybody who happens to have `npm run dev`
+ * running in another terminal — a test that fails because the developer is
+ * developing is a test nobody trusts.
+ */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = createSocketServer();
+    s.on('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => resolve(port));
+    });
+  });
+}
+
+/** GET /health until it answers, or give up. Readiness is OBSERVED, never slept. */
+async function waitForHealth(port, timeoutMs = 25000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      if (res.ok) return await res.json();
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return null;
+}
+
+/** Start `server/index.ts` on `port`, through the project's own tsx. */
+function startCoopServer(port) {
+  const cli = path.join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const child = spawn(process.execPath, [cli, path.join(ROOT, 'server', 'index.ts')], {
+    cwd: ROOT,
+    env: { ...process.env, NF_PORT: String(port) },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const log = [];
+  child.stdout.on('data', (d) => log.push(String(d)));
+  child.stderr.on('data', (d) => log.push(String(d)));
+  return { child, log };
 }
 
 // --------------------------------------------------------------------- main
