@@ -87,6 +87,18 @@
             Dusk. A forward compound, six hostiles, one carbine.<br />Clear it.
           </p>
           <button id="btn-start" class="cta" type="button">DEPLOY</button>
+          <div class="coop" id="coop">
+            <p class="coop-title">CO-OP <span>&middot; 2&ndash;4 PLAYERS VS THE AI</span></p>
+            <div class="coop-row">
+              <input id="coop-name" class="coop-input" maxlength="16" placeholder="CALLSIGN" />
+              <button id="coop-host" class="coop-btn" type="button">HOST</button>
+            </div>
+            <div class="coop-row">
+              <input id="coop-code" class="coop-input" maxlength="4" placeholder="ROOM CODE" />
+              <button id="coop-join" class="coop-btn" type="button">JOIN</button>
+            </div>
+            <p class="coop-status" id="coop-status">Playing solo &middot; the server is optional</p>
+          </div>
           <div class="settings" id="settings-start"></div>
           <ul class="controls">
             <li><b>WASD</b> move</li>

@@ -139,6 +139,19 @@ export class Enemy implements HitTarget {
   private deathTimer = 0;
   private corpseTimer = 0;
   private telegraph = 0;
+  /**
+   * M4: in a co-op room the SERVER owns this soldier.
+   *
+   * When true, `update()` runs the VISUAL half only — the clip blend, the visor
+   * telegraph, the death dressing — and position/yaw/state/health arrive from
+   * `applyNetworkState`. The state machine, the sensing and the movement are
+   * simply not run, because the authoritative copy of them is running in
+   * `server/room.ts` against the same collision world.
+   *
+   * Nothing about the SINGLE-PLAYER path changes: `networked` is false there and
+   * every M1-M3 doctrine assertion still exercises the real state machine.
+   */
+  private networked = false;
 
   // Death dressing — see `kill()`.
   private readonly deathShove = new THREE.Vector3();
@@ -278,7 +291,44 @@ export class Enemy implements HitTarget {
     return false;
   }
 
-  private kill(headshot: boolean): void {
+  /** Server-owned soldiers take their whole state from the snapshot. */
+  setNetworked(on: boolean): void {
+    this.networked = on;
+  }
+
+  /**
+   * Adopt the authoritative state for this tick.
+   *
+   * Death is edge-triggered rather than level-triggered: the local death
+   * dressing (the directional shove, the yaw twist, the dropped weapon, the
+   * clip) must fire exactly once, on the snapshot where `alive` goes false, not
+   * on every snapshot afterwards.
+   */
+  applyNetworkState(s: {
+    position: THREE.Vector3;
+    yaw: number;
+    state: EnemyState;
+    health: number;
+    alive: boolean;
+  }): void {
+    this.position.copy(s.position);
+    this.yaw = s.yaw;
+    this.health = s.health;
+    const died = this.alive && !s.alive;
+    if (this.state !== s.state) {
+      this.state = s.state;
+      this.stateTime = 0;
+    }
+    if (died) {
+      // `false` = do not raise onEnemyKilled: the kill FEED is driven by the
+      // server's own broadcast, so every client shows the same fight in the
+      // same order, including kills made by other players.
+      this.kill(false, false);
+    }
+    this.alive = s.alive;
+  }
+
+  private kill(headshot: boolean, notify = true): void {
     this.alive = false;
     this.killedByHeadshot = headshot;
     this.setState('dead');
@@ -318,7 +368,7 @@ export class Enemy implements HitTarget {
         this.ctx.collision.groundHeight(dropped.position.x, dropped.position.z, 0.2, dropped.position.y + 0.5, 0.5) + 0.06;
     }
 
-    this.ctx.onEnemyKilled(this);
+    if (notify) this.ctx.onEnemyKilled(this);
   }
 
   // ---------------------------------------------------------------- update
@@ -332,9 +382,11 @@ export class Enemy implements HitTarget {
       return;
     }
 
-    this.sense();
-    this.think(dt);
-    this.move(dt);
+    if (!this.networked) {
+      this.sense();
+      this.think(dt);
+      this.move(dt);
+    }
     this.updateVisuals(dt);
     this.syncTransform();
     this.firedThisFrame = false;

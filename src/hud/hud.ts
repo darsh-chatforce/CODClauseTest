@@ -124,6 +124,12 @@ export class Hud {
     this.hitmarkerTimer = FEEL.hitMarkerMs / 1000;
   }
 
+  /** What the feed currently shows, oldest first. Test surface: the shared
+   *  co-op kill feed is asserted through this. */
+  feedEntries(): string[] {
+    return [...this.killfeed.children].map((c) => (c.textContent ?? '').trim());
+  }
+
   addKill(label: string, headshot: boolean): void {
     const row = document.createElement('div');
     row.className = 'kf-row';

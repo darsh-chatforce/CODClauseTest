@@ -24,6 +24,9 @@ import { Screens, type MissionStats } from './hud/screens';
 import { Input } from './input/input';
 import { PlayerAvatar } from './player/avatar';
 import { Player } from './player/player';
+import { NetClient } from './net/client';
+import { PF } from './net/protocol';
+import { RemotePlayer } from './net/remote';
 import { fitCarbine, type CarbineFit } from './weapons/carbine';
 import { Rifle, type WeaponHit } from './weapons/rifle';
 import { Viewmodel } from './weapons/viewmodel';
@@ -95,6 +98,17 @@ export class Game {
    *  the stride at every speed instead of running at a fixed rate. */
   private stepDistance = 0;
   private stepLeft = false;
+
+  /**
+   * M4: the co-op link. NULL in single player, and that is the whole design.
+   *
+   * Nothing below constructs it, waits for it, or checks it during boot. The
+   * offline game is byte-for-byte the M3 build; `net` becomes non-null only when
+   * the player presses HOST or JOIN, and every use of it is guarded. A finished
+   * single-player game must not acquire a runtime dependency on a socket.
+   */
+  net: NetClient | null = null;
+  private readonly remotes = new Map<string, RemotePlayer>();
 
   /** Rolling frame-time window for the measured frame cost (see `frameCost`). */
   private readonly frameTimes = new Float32Array(120);
@@ -209,6 +223,8 @@ export class Game {
       ],
     );
 
+    this.bindCoopUi();
+
     this.rifle = new Rifle(this.collision, {
       onShot: (origin, dir, distance, adsT) => this.onPlayerShot(origin, dir, distance, adsT),
       onTargetHit: (hit) => this.onPlayerHitTarget(hit),
@@ -297,6 +313,10 @@ export class Game {
     // happen, so it happens here.
     this.audio.resume();
     this.audio.ui(1);
+    // In a room, RESTART is a request: the server owns the mission, and it
+    // resets for everyone at once so two players can never be in different
+    // missions in the same compound.
+    if (this.net?.online) this.net.restart();
     rng.reseed(0x5eed1e);
     this.player.reset(this.arena.playerSpawn, this.arena.playerYaw);
     this.rifle.reset();
@@ -330,6 +350,11 @@ export class Game {
       },
       onEnemyMuzzle: (p) => this.impacts.muzzleLight(p, 5),
       onPlayerDamaged: (amount, from) => {
+        // In a co-op room the SERVER already applied this damage and will send
+        // the authoritative health in the next snapshot; applying it locally as
+        // well would double it. The FEEDBACK (shake, arc, vignette) still fires,
+        // because it is driven from the health change, not from here.
+        if (this.net?.online) return;
         if (!this.invulnerable) this.player.takeDamage(amount, from);
       },
       onEnemyKilled: (e) => this.onEnemyKilled(e),
@@ -338,6 +363,8 @@ export class Game {
       const spawn = this.arena.enemySpawns[i % this.arena.enemySpawns.length];
       this.enemies.push(new Enemy(ctx, spawn.clone(), this.scene, this.assets));
     }
+    // `startMission` rebuilds the roster, so the networked flag is re-applied.
+    if (this.net?.online) for (const e of this.enemies) e.setNetworked(true);
 
     this.missionTime = 0;
     this.score = 0;
@@ -427,6 +454,13 @@ export class Game {
     const enemy = hit.target as Enemy;
     this.tmpDir.subVectors(this.player.eyePosition, hit.point).normalize();
     this.impacts.fleshHit(hit.point, this.tmpDir);
+    if (this.net?.online) {
+      // Server-validated: no local damage, and the hit marker waits for the
+      // server's `hit` message so the player is never told they killed
+      // something they did not.
+      this.shake.addTrauma(0.03);
+      return;
+    }
     const killed = enemy.takeDamage(hit.damage, hit.headshot);
     this.hud.hitMarker(killed);
     this.audio.hitConfirm(killed);
@@ -581,6 +615,13 @@ export class Game {
     }
 
     // ---- enemies + doctrine audit ----------------------------------------
+    // In a co-op room the SERVER owns the AI, so the authoritative state is
+    // adopted before the visual update and the local state machine never runs.
+    // The doctrine audit below still runs, and still means something: it is now
+    // auditing the SERVER's soldiers through the snapshot, so a server that
+    // let a soldier fire while moving would go red on every client.
+    if (this.net?.online) this.applyNetworkEnemies();
+
     let alive = 0;
     for (const e of this.enemies) {
       e.update(gameplayDt);
@@ -589,6 +630,25 @@ export class Game {
         this.aiViolations++;
         this.aiWorstSpeedWhileFiring = Math.max(this.aiWorstSpeedWhileFiring, e.speed);
       }
+    }
+    if (this.net?.online) {
+      alive = this.net.hostilesAlive;
+      this.updateRemotePlayers(dt);
+      // The server owns damage, so it owns health. Local damage is not applied
+      // in a room (see `onPlayerDamaged`'s guard) and this is the only writer.
+      const hp = this.net.selfHealth();
+      if (hp !== null) this.player.setHealth(hp);
+      this.net.sendInput({
+        position: this.player.position,
+        yaw: this.player.yaw,
+        pitch: this.player.pitch,
+        flags:
+          (this.player.speed > 0.6 ? PF.MOVING : 0) |
+          (this.player.sprinting ? PF.SPRINTING : 0) |
+          (this.player.crouching ? PF.CROUCHING : 0) |
+          (this.rifle.adsT > 0.5 ? PF.AIMING : 0) |
+          (this.player.dead ? PF.DEAD : 0),
+      });
     }
 
     // ---- HUD ---------------------------------------------------------------
@@ -600,7 +660,48 @@ export class Game {
     this.hud.setCrosshairSpread(this.rifle.spread, this.fov, this.renderer.domElement.clientHeight);
     this.hud.setHealth(this.player.health);
 
-    if (alive === 0) this.endMission(true);
+    // In a room the SERVER decides when the compound is clear, so a client that
+    // has not yet received the last kill does not declare victory early.
+    if (this.net?.online) {
+      if (this.net.phase === 'won') this.endMission(true);
+      else if (this.net.phase === 'lost') this.endMission(false);
+    } else if (alive === 0) {
+      this.endMission(true);
+    }
+  }
+
+  /** Adopt the authoritative enemy states from the interpolated snapshot. */
+  private applyNetworkEnemies(): void {
+    const states = this.net!.enemies();
+    for (const s of states) {
+      // Enemy ids are assigned by a module-level counter that both processes
+      // run, but a client that has restarted has a different offset — so match
+      // by INDEX within the room's fixed-size roster rather than by raw id.
+      const e = this.enemies[(s.id - 1) % this.enemies.length];
+      if (e) e.applyNetworkState({ ...s, state: s.state });
+    }
+  }
+
+  /** Spawn, update and DESPAWN teammates from the snapshot's player list. */
+  private updateRemotePlayers(dt: number): void {
+    const seen = new Set<string>();
+    for (const rp of this.net!.remotePlayers()) {
+      seen.add(rp.id);
+      let remote = this.remotes.get(rp.id);
+      if (!remote) {
+        remote = new RemotePlayer(rp, this.scene, this.assets);
+        this.remotes.set(rp.id, remote);
+      }
+      remote.update(dt, rp);
+    }
+    // ANYONE ABSENT FROM THE SNAPSHOT IS GONE. Despawn is derived from the
+    // authoritative player list rather than from a 'left' message, so a dropped
+    // packet cannot leave a ghost teammate standing in the compound forever.
+    for (const [id, remote] of this.remotes) {
+      if (seen.has(id)) continue;
+      remote.dispose(this.scene);
+      this.remotes.delete(id);
+    }
   }
 
   private fireOnce(): void {
@@ -625,6 +726,12 @@ export class Game {
     const yaw = this.player.yaw + this.rifle.recoilYaw;
     const cp = Math.cos(pitch);
     this.tmpDir.set(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp).normalize();
+    // THE SERVER DECIDES WHAT THIS HIT. The local resolution still runs so the
+    // shooter gets instant tracer/impact/recoil feedback (that is the prediction
+    // that makes a shooter feel responsive), but in a room the DAMAGE is
+    // discarded — `onPlayerHitTarget` returns early — and the authoritative
+    // result arrives as a `hit`/`kill` message a round-trip later.
+    if (this.net?.online) this.net.sendFire(this.player.eyePosition, this.tmpDir);
     this.rifle.fire(this.player.eyePosition, this.tmpDir, this.enemies, (pitch, yaw) => {
       this.player.pitch = clamp(this.player.pitch + pitch, LOOK.pitchMin, LOOK.pitchMax);
       this.player.yaw += yaw;
@@ -918,6 +1025,148 @@ export class Game {
   }
 
   /**
+   * Wire the start screen's HOST / JOIN controls.
+   *
+   * Guarded on the elements existing: the co-op panel is markup, and a build
+   * that strips it must still boot into single player rather than throwing
+   * during construction.
+   */
+  private bindCoopUi(): void {
+    const $ = <T extends HTMLElement>(id: string): T | null =>
+      document.getElementById(id) as T | null;
+    const nameEl = $<HTMLInputElement>('coop-name');
+    const codeEl = $<HTMLInputElement>('coop-code');
+    const hostBtn = $<HTMLButtonElement>('coop-host');
+    const joinBtn = $<HTMLButtonElement>('coop-join');
+    const statusEl = $('coop-status');
+    if (!hostBtn || !joinBtn || !statusEl) return;
+
+    const callsign = (): string =>
+      (nameEl?.value || '').trim() || `SOLDIER ${Math.floor(Math.random() * 90 + 10)}`;
+
+    const paint = (): void => {
+      const c = this.coopStatus();
+      statusEl.classList.remove('live', 'bad');
+      if (c.status === 'connected') {
+        statusEl.classList.add('live');
+        statusEl.textContent =
+          `ROOM ${c.room} · ${c.players} in the compound · share the code`;
+      } else if (c.status === 'connecting') {
+        statusEl.textContent = 'Connecting…';
+      } else if (c.status === 'error') {
+        statusEl.classList.add('bad');
+        statusEl.textContent = `${c.error ?? 'connection failed'} — playing solo`;
+      } else {
+        statusEl.textContent = 'Playing solo · the server is optional';
+      }
+    };
+
+    hostBtn.addEventListener('click', () => {
+      this.joinCoop(null, callsign());
+      this.net!.onStatus = (st) => {
+        if (st === 'connected') for (const e of this.enemies) e.setNetworked(true);
+        paint();
+      };
+      paint();
+    });
+    joinBtn.addEventListener('click', () => {
+      const code = (codeEl?.value || '').trim().toUpperCase();
+      this.joinCoop(code || null, callsign());
+      this.net!.onStatus = (st) => {
+        if (st === 'connected') for (const e of this.enemies) e.setNetworked(true);
+        paint();
+      };
+      paint();
+    });
+    setInterval(paint, 700);
+  }
+
+  // ------------------------------------------------------------------- co-op
+
+  /**
+   * Host or join a room.
+   *
+   * `room = null` creates one and the server allocates the code. Everything is
+   * fire-and-forget: a failure to connect leaves the game exactly as it was,
+   * playing offline, with the reason on `net.error`.
+   */
+  joinCoop(room: string | null, name: string, url = defaultServerUrl()): void {
+    this.leaveCoop();
+    const net = new NetClient();
+    this.net = net;
+
+    net.onKill = (k) => {
+      // THE SHARED KILL FEED. Every client renders the same event, including
+      // kills made by other players, because the event comes from the one
+      // process that validated it.
+      const mine = k.byId === net.selfId;
+      this.hud.addKill(
+        `${k.byName} > HOSTILE ${String(k.enemyId).padStart(2, '0')}`,
+        k.headshot,
+      );
+      if (mine) {
+        this.kills++;
+        this.score += k.headshot ? MISSION.scoreHeadshot : MISSION.scoreKill;
+        this.hud.hitMarker(true);
+        this.audio.hitConfirm(true);
+        this.hitstop.trigger(FEEL.hitstopKillMs);
+        this.shake.addTrauma(FEEL.traumaKill);
+      }
+    };
+    net.onHit = (_enemyId, killed) => {
+      if (!killed) {
+        this.hud.hitMarker(false);
+        this.audio.hitConfirm(false);
+      }
+    };
+    net.onJoined = (who) => this.hud.showPrompt(`${who} JOINED`);
+    net.onLeft = (who) => this.hud.showPrompt(`${who} LEFT`);
+    net.onStatus = (st) => {
+      if (st === 'connected') {
+        for (const e of this.enemies) e.setNetworked(true);
+        this.hud.showPrompt(`ROOM ${net.room}`);
+      }
+    };
+    net.connect(url, room, name);
+  }
+
+  /** Drop back to single player. Always safe, even if never connected. */
+  leaveCoop(): void {
+    for (const [, r] of this.remotes) r.dispose(this.scene);
+    this.remotes.clear();
+    for (const e of this.enemies) e.setNetworked(false);
+    this.net?.disconnect();
+    this.net = null;
+  }
+
+  /** What the kill feed currently shows. Test surface for the shared feed. */
+  killFeedEntries(): string[] {
+    return this.hud.feedEntries();
+  }
+
+  coopStatus(): {
+    online: boolean;
+    status: string;
+    room: string | null;
+    id: string | null;
+    name: string;
+    players: number;
+    remotes: number;
+    error: string | null;
+  } {
+    return {
+      online: this.net?.online ?? false,
+      status: this.net?.status ?? 'offline',
+      room: this.net?.room ?? null,
+      id: this.net?.selfId ?? null,
+      name: this.net?.name ?? '',
+      players: this.net?.playerCount() ?? (this.net ? 0 : 1),
+      remotes: this.remotes.size,
+      error: this.net?.error ?? null,
+    };
+  }
+
+  /**
    * The ADS alignment, as a number.
    *
    * Returns the optic's position in normalised device coordinates. Call it once
@@ -1080,4 +1329,19 @@ export class Game {
   setInspect(on: boolean): void {
     if (this.inspect !== on) this.toggleInspect();
   }
+}
+
+/**
+ * Where the co-op server lives, by default.
+ *
+ * Derived from the page rather than hardcoded, so the same build works in dev
+ * and behind any host in a deploy, and so the smoke harness can point two
+ * clients at one server via `?server=` without a special build.
+ */
+export function defaultServerUrl(): string {
+  const params = new URLSearchParams(window.location.search);
+  const explicit = params.get('server');
+  if (explicit) return explicit;
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.hostname}:8787`;
 }

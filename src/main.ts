@@ -66,6 +66,17 @@ export interface TestApi {
   /** Rolling frame-time statistics over the last 120 frames. */
   frameCost(): { meanMs: number; p95Ms: number; fps: number; samples: number };
   resetFrameCost(): void;
+
+  // ---- M4 co-op ----------------------------------------------------------
+  /** Host (room = null) or join a room. `url` overrides the derived default. */
+  coopJoin(room: string | null, name: string, url?: string): void;
+  coopLeave(): void;
+  coop(): {
+    online: boolean; status: string; room: string | null; id: string | null;
+    name: string; players: number; remotes: number; error: string | null;
+  };
+  /** Names currently shown in the kill feed — the SHARED feed, as rendered. */
+  killFeed(): string[];
 }
 
 const nextFrame = (): Promise<void> =>
@@ -117,6 +128,10 @@ const api: TestApi = {
   opticClear: () => game.opticClear(),
   frameCost: () => game.frameCost(),
   resetFrameCost: () => game.resetFrameCost(),
+  coopJoin: (room, name, url) => game.joinCoop(room, name, url),
+  coopLeave: () => game.leaveCoop(),
+  coop: () => game.coopStatus(),
+  killFeed: () => game.killFeedEntries(),
 };
 
 declare global {

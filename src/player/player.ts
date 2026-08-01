@@ -287,6 +287,24 @@ export class Player {
 
   // ---------------------------------------------------------------- damage
 
+  /**
+   * M4: adopt server-authoritative health.
+   *
+   * In a co-op room the server owns damage, so this is the ONLY writer of
+   * health there — `takeDamage` is short-circuited by the game's own guard. It
+   * sets the death edge so the local death handling still fires exactly once.
+   */
+  setHealth(hp: number): void {
+    const next = Math.max(0, Math.min(PLAYER.maxHealth, hp));
+    if (next === this.health) return;
+    const wasDead = this.dead;
+    this.health = next;
+    if (!wasDead && next <= 0) {
+      this.dead = true;
+      this.onDeath?.();
+    }
+  }
+
   takeDamage(amount: number, from: THREE.Vector3): void {
     if (this.dead) return;
     this.health = Math.max(0, this.health - amount);

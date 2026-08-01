@@ -526,6 +526,89 @@ body.reloading .reload-label {
   font-weight: 600;
 }
 
+/* ----------------------------------------------------------------- co-op ---
+   Host/join lives on the start screen next to DEPLOY, because a co-op game
+   nobody can find is a single-player game. */
+.coop {
+  margin: 1.6rem 0 0;
+  padding-top: 1.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  text-align: left;
+}
+
+.coop-title {
+  margin: 0 0 0.7em;
+  font-size: 0.68rem;
+  letter-spacing: 0.3em;
+  color: var(--hud-key);
+}
+
+.coop-title span {
+  color: var(--hud-dim);
+  letter-spacing: 0.12em;
+}
+
+.coop-row {
+  display: flex;
+  gap: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.coop-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0.6em 0.8em;
+  color: var(--hud-ink);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.coop-input::placeholder {
+  color: rgba(139, 144, 153, 0.7);
+  letter-spacing: 0.14em;
+}
+
+.coop-input:focus {
+  outline: none;
+  border-color: rgba(255, 182, 72, 0.6);
+}
+
+.coop-btn {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  padding: 0.6em 1.4em;
+  cursor: pointer;
+  color: var(--hud-ink);
+  background: rgba(255, 182, 72, 0.14);
+  border: 1px solid rgba(255, 182, 72, 0.45);
+  transition: background 0.12s ease;
+}
+
+.coop-btn:hover {
+  background: rgba(255, 182, 72, 0.3);
+}
+
+.coop-status {
+  margin: 0.6em 0 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  color: var(--hud-dim);
+}
+
+.coop-status.live {
+  color: var(--hud-good);
+}
+
+.coop-status.bad {
+  color: var(--hud-bad);
+}
+
 /* ------------------------------------------------------------- settings ---
    Rendered into BOTH the start and pause screens from one definition in
    screens.ts, so a setting cannot exist on one screen and not the other. */
