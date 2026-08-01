@@ -1144,6 +1144,30 @@ export class Game {
     return this.hud.feedEntries();
   }
 
+  /**
+   * Where each teammate's avatar is actually DRAWN this frame.
+   *
+   * Deliberately the RENDERED transform (`group.position`), not the newest wire
+   * value. The interpolation assertion is only worth anything if it measures
+   * what the eye sees: reading the snapshot back would prove the packets
+   * arrived at 15 Hz, which was never in doubt, and would say nothing about
+   * whether the avatar stair-steps between them.
+   */
+  remoteAvatars(): Array<{ id: string; name: string; x: number; y: number; z: number; yaw: number }> {
+    const out = [];
+    for (const r of this.remotes.values()) {
+      out.push({
+        id: r.id,
+        name: r.name,
+        x: r.group.position.x,
+        y: r.group.position.y,
+        z: r.group.position.z,
+        yaw: r.group.rotation.y,
+      });
+    }
+    return out;
+  }
+
   coopStatus(): {
     online: boolean;
     status: string;

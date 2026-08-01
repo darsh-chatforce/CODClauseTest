@@ -63,6 +63,7 @@ function nameTag(name: string): THREE.Sprite {
 
 export class RemotePlayer {
   readonly id: string;
+  readonly name: string;
   readonly group = new THREE.Group();
   private readonly soldier: RiggedSoldier | null;
   private readonly tag: THREE.Sprite;
@@ -74,6 +75,7 @@ export class RemotePlayer {
 
   constructor(state: RemotePlayerState, scene: THREE.Scene, assets: Assets) {
     this.id = state.id;
+    this.name = state.name;
     this.group.name = `remote-${state.id}`;
 
     const s = new RiggedSoldier(assets, {

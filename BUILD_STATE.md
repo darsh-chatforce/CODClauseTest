@@ -475,3 +475,37 @@ instruction.
       sample size, and the tool must report an interval, not a bare percentage.
 - [x] **FINAL: 68/68 assertions ALL GREEN**, fresh 7-shot set, dev server 200 on
       index + `/src/main.ts` + soldier/carbine GLBs + sky + textures.
+
+## Milestone 4 — MULTIPLAYER (co-op vs the AI)
+
+- [x] **Chunk 1 (`10b5a32`) — authoritative server.** `server/index.ts` (ws on
+      :8787, `/health` so a harness can wait for readiness instead of sleeping a
+      hopeful number of ms, room codes from a no-0/O/1/I/5/S alphabet) and
+      `server/room.ts`. The headline: the room runs **the game's own `Enemy`,
+      `NavGraph`, `CollisionWorld` and `arenaLayout()`** — the same 106 collider
+      specs and 328 waypoints the browser builds — not a server-side
+      reimplementation. A multiplayer server that reimplements its game's AI is a
+      second game, and it diverges the first time somebody tunes a number.
+      Authority split, stated in `src/net/protocol.ts`: enemies SERVER-AUTHORITATIVE,
+      hits SERVER-VALIDATED (the client sends an origin and a direction, nothing
+      else), player movement CLIENT-AUTHORITATIVE **by choice** — there is nothing
+      to gain by cheating at walking, and the thing worth protecting (who killed
+      what) is already validated.
+- [x] **Chunk 2 (`8f40922`) — client integration.** `src/net/client.ts` (socket,
+      snapshot ring, interpolation at `now − 120 ms` between two snapshots that
+      have ALREADY ARRIVED, never extrapolated; yaw the short way round the
+      circle), `src/net/remote.ts` (teammates are the same `RiggedSoldier` +
+      generated carbine as everything else, friendly tint + name tag; locomotion
+      RECONSTRUCTED from consecutive snapshots rather than sent), `Enemy.networked`
+      (visual half only in a room), and the `Game` wiring. Design constraint above
+      everything else: **`src/net/` must be removable** — `Game.net` is null in
+      single player, nothing in boot touches it, every use is guarded.
+- [x] **SINGLE-PLAYER REGRESSION, server absent: 67/68.** The one failure is not a
+      regression, it is the machine: *"post-processing holds a playable frame
+      rate"* read **40.28 ms** against a <33 ms bar, on a box carrying a load
+      average of **7.4 (1 min) / 12.2 (5 min)** with a browser pinned at 90% CPU,
+      rendering through SwiftShader (software GL) because headless Chrome has no
+      GPU here. The same assertion read 16.67 ms at M3 on the same code path. The
+      assertion is CORRECT and is not being touched; it is re-run on a quiet
+      machine below rather than widened, which is the M3 rule (a real transient is
+      waited out, not covered by a looser tolerance).

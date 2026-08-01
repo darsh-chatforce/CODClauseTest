@@ -77,6 +77,8 @@ export interface TestApi {
   };
   /** Names currently shown in the kill feed — the SHARED feed, as rendered. */
   killFeed(): string[];
+  /** Teammate avatars as DRAWN this frame (interpolated), not as received. */
+  remotes(): Array<{ id: string; name: string; x: number; y: number; z: number; yaw: number }>;
 }
 
 const nextFrame = (): Promise<void> =>
@@ -132,6 +134,7 @@ const api: TestApi = {
   coopLeave: () => game.leaveCoop(),
   coop: () => game.coopStatus(),
   killFeed: () => game.killFeedEntries(),
+  remotes: () => game.remoteAvatars(),
 };
 
 declare global {
