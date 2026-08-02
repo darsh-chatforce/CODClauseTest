@@ -584,3 +584,22 @@ instruction.
       models (linked), the six clips as **CC0 from Mesh2Motion** with the link
       and its 66-joint skeleton named, Poly Haven for the sky, and the explicit
       note that textures are baked and audio is synthesised — nothing sampled.
+
+### M4 COMPLETE — 85/85 assertions, ALL GREEN
+
+Final run on a quiet box (load average 3.06): 85 of 85, zero console errors or
+warnings, fresh 7-shot set. The M3 suite was 68; M4 added seventeen and weakened
+none of the sixty-eight. The single-player game still runs with `server/` absent
+and `src/net/` still deletes cleanly.
+
+Left honest-open, and neither is a defect:
+
+- **The frame-cost assertion is a floor, not a benchmark.** `< 33 ms` catches a
+  real regression on any machine; it deliberately does not assert 60 fps, because
+  that would make the suite a benchmark of whoever runs it. The 16.67 ms reading
+  is the development machine's vsync cap and is recorded, not asserted.
+- **The difficulty band is still unresolved at the sample sizes affordable
+  here.** Shipped at 59.4% (38/64, 95% CI ≈ [47%, 71%]) — the best-supported
+  estimate, whose interval contains the target band. Resolving the band properly
+  needs ~400 runs per configuration. `balance.mjs` says so out loud rather than
+  printing a bare percentage.
