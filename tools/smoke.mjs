@@ -147,6 +147,65 @@ function startCoopServer(port) {
   return { child, log };
 }
 
+/**
+ * ONE BROWSER PROCESS PER CO-OP CLIENT — not two tabs in the suite's browser.
+ *
+ * Two tabs in one Chrome share a pointer lock and a foreground. The second
+ * tab's `startMission()` took the lock, the first tab's `pointerlockchange`
+ * fired with a null lock element, and `Game` did precisely what it does when a
+ * real player alt-tabs mid-firefight: it PAUSED. The backgrounded tab also had
+ * its `requestAnimationFrame` throttled, so its net loop stopped sending input
+ * entirely. Both are correct behaviours being provoked by the harness rather
+ * than by the game, and neither is what two people on two machines experience.
+ *
+ * It also keeps the co-op clients' console and error streams out of the
+ * single-player page's, so the hygiene assertions below still mean what they
+ * meant at M3.
+ */
+function launchCoopClient(executablePath, index) {
+  return puppeteer.launch({
+    executablePath,
+    headless: HEADFUL ? false : 'new',
+    args: [
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--enable-unsafe-swiftshader',
+      '--hide-scrollbars',
+      '--mute-audio',
+      // A headless window is never "visible", so without these the renderer is
+      // throttled towards 1 Hz and the client stops playing while we watch it.
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--window-size=1024,640',
+      `--window-position=${index * 1044},0`,
+    ],
+    defaultViewport: { width: 1024, height: 640, deviceScaleFactor: 1 },
+  });
+}
+
+/**
+ * Per-frame planar deltas of a remote avatar, and the shape of the
+ * distribution — the whole interpolation assertion is one read of this.
+ *
+ * A client that SNAPPED to each snapshot instead of interpolating would, at
+ * 15 Hz snapshots against ~60 fps rendering, hold still for three frames and
+ * then jump on the fourth: `frozen` near 0.75 and `ratio` (max/mean) near 4.
+ * A client that interpolates spreads the same distance evenly.
+ */
+function motionStats(samples) {
+  const d = [];
+  for (let i = 1; i < samples.length; i++) {
+    d.push(Math.hypot(samples[i].x - samples[i - 1].x, samples[i].z - samples[i - 1].z));
+  }
+  if (d.length < 20) return null;
+  const total = d.reduce((a, b) => a + b, 0);
+  const mean = total / d.length;
+  const max = Math.max(...d);
+  const frozen = d.filter((v) => v < mean * 0.1).length / d.length;
+  return { frames: d.length, total, mean, max, ratio: max / mean, frozen };
+}
+
 // --------------------------------------------------------------------- main
 
 async function main() {
@@ -984,6 +1043,342 @@ async function main() {
     );
     check('cold no-postfx boot is clean', coldErrors.length === 0, coldErrors.slice(0, 2).join(' | '));
     await cold.close();
+
+    // =======================================================================
+    // M4 — CO-OP, TWO REAL CLIENTS AGAINST THE REAL SERVER
+    // =======================================================================
+    //
+    // Nothing here mocks a socket, stubs a snapshot or reaches into the room.
+    // The suite starts `server/index.ts` as a child process on a port the OS
+    // says is free, boots two production builds in two headless browsers, and
+    // has them host and join a room by code. Every assertion below reads what a
+    // client can actually see — the DRAWN avatar transform, the local enemy
+    // roster, the rendered kill feed — so a protocol change, a broken tick loop
+    // or a regressed interpolator fails here rather than in someone's session.
+    //
+    // The M3 single-player assertions above ran with the server ABSENT and are
+    // untouched: `src/net/` stays removable, and this block is the proof that
+    // the co-op path works, not a licence for the offline game to depend on it.
+    console.log('\n== M4: CO-OP (two clients, one room) ==');
+    const nfPort = await freePort();
+    const wsUrl = `ws://127.0.0.1:${nfPort}`;
+    const coop = startCoopServer(nfPort);
+    let clientA = null;
+    let clientB = null;
+    try {
+      const health = await waitForHealth(nfPort);
+      check(
+        'co-op server comes up and answers /health',
+        !!health && health.ok === true,
+        health ? `${health.snapshotHz} Hz snapshots` : coop.log.join(' ').slice(0, 200),
+      );
+
+      if (health) {
+        clientA = await launchCoopClient(executablePath, 0);
+        clientB = await launchCoopClient(executablePath, 1);
+
+        const coopErrors = [];
+        const bootCoop = async (browserN, label) => {
+          const pg = (await browserN.pages())[0] ?? (await browserN.newPage());
+          pg.on('pageerror', (e) => coopErrors.push(`${label}: ${e}`));
+          pg.on('console', (m) => {
+            if (m.type() === 'error') coopErrors.push(`${label} console: ${m.text()}`);
+          });
+          await pg.setViewport({ width: 1024, height: 640, deviceScaleFactor: 1 });
+          await pg.goto(base, { waitUntil: 'load', timeout: 30000 });
+          await pg.waitForFunction(() => window.__FPS__?.ready === true, { timeout: 20000 });
+          await pg.evaluate(() => {
+            window.__FPS__.audioMuted(true);
+            window.__FPS__.start();
+            window.__FPS__.invulnerable(true);
+          });
+          return pg;
+        };
+        const pageA = await bootCoop(clientA, 'client A');
+        const pageB = await bootCoop(clientB, 'client B');
+
+        // Join, and WAIT ON THE SERVER'S ANSWER rather than on a timer.
+        const join = async (pg, room, name) => {
+          await pg.evaluate(
+            ({ r, n, u }) => window.__FPS__.coopJoin(r, n, u),
+            { r: room, n: name, u: wsUrl },
+          );
+          await pg.waitForFunction(
+            () => ['connected', 'error'].includes(window.__FPS__.coop().status),
+            { timeout: 15000, polling: 100 },
+          );
+          return pg.evaluate(() => window.__FPS__.coop());
+        };
+        const coopOf = (pg) => pg.evaluate(() => window.__FPS__.coop());
+        const stateOf = (pg) => pg.evaluate(() => window.__FPS__.state());
+        const remotesOf = (pg) => pg.evaluate(() => window.__FPS__.remotes());
+        const feedOf = (pg) => pg.evaluate(() => window.__FPS__.killFeed());
+        // Point the player down the longest bearing the COLLISION WORLD allows
+        // and confirm it, rather than assuming "hold W" is a straight line from
+        // a spawn tile that happens to face a wall.
+        const faceOpenGround = (pg) =>
+          pg.evaluate(() => {
+            const st = window.__FPS__.state();
+            let bestYaw = st.player.yaw;
+            let bestClear = -1;
+            for (let k = 0; k < 16; k++) {
+              const yaw = (k / 16) * Math.PI * 2;
+              window.__FPS__.teleport(
+                st.player.x - Math.sin(yaw) * 7,
+                st.player.z - Math.cos(yaw) * 7,
+              );
+              const probe = window.__FPS__.state();
+              const moved = Math.hypot(probe.player.x - st.player.x, probe.player.z - st.player.z);
+              if (moved > bestClear) {
+                bestClear = moved;
+                bestYaw = yaw;
+              }
+            }
+            window.__FPS__.teleport(st.player.x, st.player.z);
+            window.__FPS__.aim(bestYaw, 0);
+            return { yaw: bestYaw, clear: bestClear };
+          });
+        const walk = async (pg, ms) => {
+          await pg.evaluate(() => window.__FPS__.key('forward', true));
+          await wait(ms);
+          await pg.evaluate(() => window.__FPS__.key('forward', false));
+        };
+
+        const a = await join(pageA, null, 'ALPHA');
+        check(
+          'host creates a room and gets a readable four-character code',
+          a.status === 'connected' && /^[ABCDEFGHJKLMNPQRTUVWXYZ234789]{4}$/.test(a.room ?? ''),
+          `${a.status} room=${a.room} ${a.error ?? ''}`,
+        );
+        const b = await join(pageB, a.room, 'BRAVO');
+        check(
+          'second client joins that room by code',
+          b.status === 'connected' && b.room === a.room,
+          `${b.status} room=${b.room} ${b.error ?? ''}`,
+        );
+        await wait(1300);
+        const seenA = await coopOf(pageA);
+        const seenB = await coopOf(pageB);
+        check(
+          'both clients see two soldiers in the compound',
+          seenA.players === 2 && seenB.players === 2 &&
+            seenA.remotes === 1 && seenB.remotes === 1,
+          `A: ${seenA.players} players / ${seenA.remotes} avatars, ` +
+            `B: ${seenB.players} players / ${seenB.remotes} avatars`,
+        );
+
+        // ---- (a) mutual movement visibility, and (e) interpolation --------
+        //
+        // One straight run does both: B watches A's avatar every frame while A
+        // covers ~6 m, which is simultaneously "did the movement arrive" and
+        // "how did it arrive".
+        await faceOpenGround(pageA);
+        await wait(500);
+        const aBefore = (await remotesOf(pageB))[0];
+        const aSelfBefore = (await stateOf(pageA)).player;
+        const sampling = pageB.evaluate(
+          (dur) =>
+            new Promise((resolve) => {
+              const out = [];
+              const t0 = performance.now();
+              const step = () => {
+                const now = performance.now();
+                // The DRAWN transform, not the newest packet: the assertion is
+                // about what the eye sees, and reading the wire back would only
+                // prove the packets arrived at 15 Hz, which was never in doubt.
+                const r = window.__FPS__.remotes()[0];
+                if (r) out.push({ t: now - t0, x: r.x, z: r.z });
+                if (now - t0 < dur) requestAnimationFrame(step);
+                else resolve(out);
+              };
+              requestAnimationFrame(step);
+            }),
+          1600,
+        );
+        await walk(pageA, 1500);
+        const samples = await sampling;
+        await wait(400);
+        const aAfter = (await remotesOf(pageB))[0];
+        const aSelfAfter = (await stateOf(pageA)).player;
+        const aSelfMoved = Math.hypot(
+          aSelfAfter.x - aSelfBefore.x,
+          aSelfAfter.z - aSelfBefore.z,
+        );
+        const aSeenMoved = aBefore && aAfter
+          ? Math.hypot(aAfter.x - aBefore.x, aAfter.z - aBefore.z)
+          : 0;
+        check(
+          'A moves and B sees A\'s avatar move',
+          aSelfMoved > 1 && aSeenMoved > 1,
+          `A covered ${aSelfMoved.toFixed(2)} m, B saw ${aSeenMoved.toFixed(2)} m`,
+        );
+        check(
+          'B\'s copy of A ends up where A actually is',
+          aSelfMoved > 1 && Math.abs(aSeenMoved - aSelfMoved) < 1.2,
+          `Δ${Math.abs(aSeenMoved - aSelfMoved).toFixed(2)} m`,
+        );
+
+        const ms = motionStats(samples);
+        // 15 Hz snapshots against ~60 fps: a client that stepped rather than
+        // interpolated would freeze for three frames in four (0.75) and jump
+        // ~4x the mean on the fourth. Measured on the development machine:
+        // ratio 2.23-2.53, frozen 12.5-15.6% across four runs. The bounds sit
+        // between the two, so they cannot pass a stepping client and do not
+        // fail a healthy one.
+        check(
+          'remote avatar interpolates instead of stepping between snapshots',
+          !!ms && ms.ratio < 3.4,
+          ms
+            ? `worst frame ${ms.ratio.toFixed(2)}x the mean over ${ms.frames} frames ` +
+              `(a stepping client reads ~4x)`
+            : 'not enough samples',
+        );
+        check(
+          'remote avatar is never frozen waiting for the next snapshot',
+          !!ms && ms.frozen < 0.4,
+          ms
+            ? `${(ms.frozen * 100).toFixed(1)}% of frames stationary during a ` +
+              `${ms.total.toFixed(2)} m run (a stepping client reads ~75%)`
+            : 'not enough samples',
+        );
+
+        // The reverse direction is not symmetry theatre: the host and the
+        // joiner take different paths through `joinCoop`, and only one of them
+        // allocated the room.
+        await faceOpenGround(pageB);
+        await wait(500);
+        const bBefore = (await remotesOf(pageA))[0];
+        const bSelfBefore = (await stateOf(pageB)).player;
+        await walk(pageB, 1500);
+        await wait(400);
+        const bAfter = (await remotesOf(pageA))[0];
+        const bSelfAfter = (await stateOf(pageB)).player;
+        const bSelfMoved = Math.hypot(
+          bSelfAfter.x - bSelfBefore.x,
+          bSelfAfter.z - bSelfBefore.z,
+        );
+        const bSeenMoved = bBefore && bAfter
+          ? Math.hypot(bAfter.x - bBefore.x, bAfter.z - bBefore.z)
+          : 0;
+        check(
+          'B moves and A sees B\'s avatar move',
+          bSelfMoved > 1 && bSeenMoved > 1,
+          `B covered ${bSelfMoved.toFixed(2)} m, A saw ${bSeenMoved.toFixed(2)} m`,
+        );
+
+        // ---- (b) shared enemy state + (c) the cross-client kill feed -------
+        //
+        // A fires real rounds. The SERVER decides what they hit, against its own
+        // authoritative enemy positions — `killAll()` would be useless here,
+        // because a locally-killed enemy is resurrected by the next snapshot.
+        const closeIn = (pg, idx) =>
+          pg.evaluate((i) => {
+            const st = window.__FPS__.state();
+            const e = st.enemies[i];
+            if (!e || !e.alive) return false;
+            for (let k = 0; k < 12; k++) {
+              const ang = (k / 12) * Math.PI * 2;
+              window.__FPS__.teleport(e.x + Math.cos(ang) * 5, e.z + Math.sin(ang) * 5);
+              if (window.__FPS__.los(e.id)) return true;
+            }
+            return false;
+          }, idx);
+        const aimAndFire = (pg, idx) =>
+          pg.evaluate(async (i) => {
+            const st = window.__FPS__.state();
+            const e = st.enemies[i];
+            if (!e) return;
+            const dx = e.x - st.player.x;
+            const dz = e.z - st.player.z;
+            const horiz = Math.hypot(dx, dz);
+            const dy = e.y + 1.15 - (st.player.y + st.player.eyeHeight);
+            window.__FPS__.aim(Math.atan2(-dx, -dz), Math.atan2(dy, horiz));
+            await window.__FPS__.fire(1);
+          }, idx);
+
+        let killedIdx = -1;
+        let rounds = 0;
+        for (let idx = 0; idx < 6 && killedIdx < 0; idx++) {
+          for (let n = 0; n < 10; n++) {
+            const st = await stateOf(pageA);
+            if (st.phase !== 'playing') break;
+            if (!st.enemies[idx] || !st.enemies[idx].alive) break;
+            await closeIn(pageA, idx);
+            await wait(90);
+            await aimAndFire(pageA, idx);
+            rounds++;
+            await wait(140);
+          }
+          const st = await stateOf(pageA);
+          if (st.enemies[idx] && !st.enemies[idx].alive) killedIdx = idx;
+        }
+        await wait(800);
+        const killA = await stateOf(pageA);
+        const killB = await stateOf(pageB);
+        check(
+          'a client\'s round is validated by the server and kills a hostile',
+          killedIdx >= 0,
+          `${rounds} rounds fired, hostile index ${killedIdx}`,
+        );
+        // THE ONE THAT MATTERS: the same soldier is on the ground for the
+        // player who never fired at it. Compared by ROSTER INDEX rather than by
+        // id, because ids come from a module counter each process runs
+        // independently — matching on them would be testing the counter.
+        check(
+          'a hostile killed by A is dead for B as well',
+          killedIdx >= 0 && !!killB.enemies[killedIdx] && killB.enemies[killedIdx].alive === false,
+          killedIdx >= 0
+            ? `B's hostile ${killedIdx} alive=${killB.enemies[killedIdx]?.alive}`
+            : 'nothing was killed',
+        );
+        check(
+          'both clients agree on how many hostiles are left',
+          killA.hostilesAlive === killB.hostilesAlive && killA.hostilesAlive < 6,
+          `A ${killA.hostilesAlive}, B ${killB.hostilesAlive}`,
+        );
+        const feedA = await feedOf(pageA);
+        const feedB = await feedOf(pageB);
+        check(
+          'A\'s kill reaches B\'s feed, attributed to A',
+          feedB.some((r) => r.includes('ALPHA') && r.includes('HOSTILE')),
+          JSON.stringify(feedB),
+        );
+        // The other half of the same bug: the feed was written for one player
+        // and hard coded the actor as YOU, so before this every client rendered
+        // every teammate's kill as its own.
+        check(
+          'the shooter\'s own feed still says YOU, not its callsign',
+          feedA.some((r) => r.includes('YOU')) && !feedA.some((r) => r.includes('ALPHA')),
+          JSON.stringify(feedA),
+        );
+
+        // ---- (d) disconnect despawn ---------------------------------------
+        const beforeLeave = await coopOf(pageB);
+        await pageA.evaluate(() => window.__FPS__.coopLeave());
+        await wait(1800);
+        const afterLeave = await coopOf(pageB);
+        const ghosts = await remotesOf(pageB);
+        check(
+          'A leaves and A\'s avatar despawns for B',
+          beforeLeave.remotes === 1 && afterLeave.remotes === 0 && ghosts.length === 0,
+          `B's teammate count ${beforeLeave.remotes} → ${afterLeave.remotes}`,
+        );
+        check(
+          'B is still connected and playing after A left',
+          afterLeave.status === 'connected' && (await stateOf(pageB)).phase === 'playing',
+          afterLeave.status,
+        );
+        check(
+          'neither co-op client logged an uncaught exception',
+          coopErrors.length === 0,
+          coopErrors.slice(0, 3).join(' | '),
+        );
+      }
+    } finally {
+      if (clientA) await clientA.close();
+      if (clientB) await clientB.close();
+      coop.child.kill('SIGTERM');
+    }
 
     // ---- console hygiene --------------------------------------------------
     console.log('\n== HYGIENE ==');

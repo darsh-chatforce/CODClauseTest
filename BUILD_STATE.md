@@ -509,3 +509,58 @@ instruction.
       assertion is CORRECT and is not being touched; it is re-run on a quiet
       machine below rather than widened, which is the M3 rule (a real transient is
       waited out, not covered by a looser tolerance).
+- [x] **Chunk 3 (`5296696`) — the two-client driver, and the two bugs it found.**
+      `tools/mp_driver.mjs` boots the real server plus TWO real headless clients
+      into one room in **~13 s**, so the co-op path could be iterated without
+      paying four minutes a look. It MEASURES rather than asserts: every bound in
+      the suite's co-op block below is an observed number with headroom, not a
+      guess. It found two real bugs on its first honest run:
+      · **The kill feed lied.** It was written for one player and hard coded the
+        actor as `YOU`. In a room it renders the server's kill events *including a
+        teammate's*, so every client that did NOT fire the shot was showing
+        `YOU ELIMINATED ALPHA > HOSTILE 01`. `hud.addKill()` now takes the actor.
+      · **`requestPointerLock()` rejects**, it does not resolve-false, when the
+        browser will not grant a lock. Unhandled, that is an uncaught
+        `DOMException` on a perfectly healthy client — one per client, every run.
+      The harness itself needed one correction worth writing down: **two tabs in
+      one browser share a pointer lock and a foreground.** The second tab's
+      `startMission()` took the lock, the first tab's `pointerlockchange` fired
+      with a null element, and `Game` did exactly what it does when a real player
+      alt-tabs mid-firefight — it PAUSED, and its throttled `rAF` stopped sending
+      input. Both correct behaviours, provoked by the harness rather than the
+      game. One browser process per player is the arrangement that matches two
+      people on two machines.
+- [x] **Suite ported: 68 → 85 assertions, ALL GREEN.** Seventeen co-op assertions
+      in `tools/smoke.mjs`, none of them weakening anything above them. They boot
+      `server/index.ts` as a child process on an OS-assigned port and drive two
+      production builds in two browsers. What they read is what a **client can
+      see** — the DRAWN avatar transform, the local enemy roster, the rendered
+      kill feed — so a protocol change or a regressed interpolator fails here
+      rather than in someone's session.
+      · *mutual movement* — A covers 6.23 m, B's avatar of A moves 6.23 m (Δ0.00),
+        and the reverse, which is not symmetry theatre: host and joiner take
+        different paths through `joinCoop` and only one allocated the room.
+      · *shared enemy state* — A fires REAL rounds (`killAll()` is useless in a
+        room: a locally-killed enemy is resurrected by the next snapshot), the
+        server validates them, and the hostile is on the ground for the player who
+        never shot at it. Compared by ROSTER INDEX, not by id — ids come from a
+        module counter each process runs independently, so matching on them would
+        be testing the counter.
+      · *cross-client kill feed* — B's feed reads `ALPHA ELIMINATED HOSTILE 01`
+        while A's reads `YOU ELIMINATED HOSTILE 01`. Both halves asserted, because
+        the bug above made them the same string.
+      · *disconnect despawn* — A leaves, B's teammate count goes 1 → 0, and B is
+        still connected and playing.
+      · *interpolation smoothness* — the one that needed a measured bound. At
+        15 Hz snapshots against ~60 fps, a client that STEPPED would freeze three
+        frames in four (**0.75**) and jump **~4x** the mean on the fourth.
+        Measured across four runs: worst frame **2.23–2.53x** the mean, **12.5–
+        15.6%** frozen. Bounds set at **<3.4x** and **<40%** — between the two, so
+        they cannot pass a stepping client and do not fail a healthy one.
+- [x] **THE M3 FRAME-TIME RED IS CLEARED — on a quiet machine, as promised.**
+      *"post-processing holds a playable frame rate"* read **16.67 ms (60.0 fps)
+      with post-processing ON**, and 16.67 ms with it off, at load average
+      **3.35 (1 min)**. That is the vsync cap: exactly the M3 number, on the same
+      code path. The 40.28 ms reading was the box (load 7.4, browser pinned at
+      90% CPU, SwiftShader), and it was waited out rather than tolerated. The
+      assertion was never touched.
