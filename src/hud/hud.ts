@@ -130,10 +130,16 @@ export class Hud {
     return [...this.killfeed.children].map((c) => (c.textContent ?? '').trim());
   }
 
-  addKill(label: string, headshot: boolean): void {
+  /**
+   * `who` exists because of co-op. The feed was written for one player and hard
+   * coded the actor as YOU; in a room it renders the SERVER's kill events,
+   * including a teammate's, and "YOU ELIMINATED ALPHA > HOSTILE 01" is a feed
+   * that lies about who did the shooting on every client that did not.
+   */
+  addKill(label: string, headshot: boolean, who = 'YOU'): void {
     const row = document.createElement('div');
     row.className = 'kf-row';
-    row.innerHTML = `<span class="who">YOU</span><span class="verb">ELIMINATED</span>${label}${
+    row.innerHTML = `<span class="who">${who}</span><span class="verb">ELIMINATED</span>${label}${
       headshot ? '<span class="hs">HS</span>' : ''
     }`;
     this.killfeed.append(row);

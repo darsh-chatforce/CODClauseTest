@@ -1101,8 +1101,9 @@ export class Game {
       // process that validated it.
       const mine = k.byId === net.selfId;
       this.hud.addKill(
-        `${k.byName} > HOSTILE ${String(k.enemyId).padStart(2, '0')}`,
+        `HOSTILE ${String(k.enemyId).padStart(2, '0')}`,
         k.headshot,
+        mine ? 'YOU' : k.byName,
       );
       if (mine) {
         this.kills++;

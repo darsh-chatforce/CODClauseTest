@@ -132,7 +132,22 @@ export class Input {
   // ------------------------------------------------------------- lock/mouse
 
   requestLock(): void {
-    if (!this.locked) void this.canvas.requestPointerLock?.();
+    if (this.locked) return;
+    // `requestPointerLock()` REJECTS rather than resolving-false when the
+    // browser will not grant the lock — no user gesture, a headless renderer, a
+    // document that is not the active one. Left unhandled that surfaces as an
+    // uncaught DOMException on a perfectly healthy client (two headless co-op
+    // clients produced one each, every run). Pointer lock is a convenience; the
+    // game plays through the same input state either way, so a refusal is
+    // swallowed deliberately.
+    try {
+      const p = this.canvas.requestPointerLock?.() as unknown;
+      if (p && typeof (p as Promise<void>).catch === 'function') {
+        void (p as Promise<void>).catch(() => {});
+      }
+    } catch {
+      /* pointer lock is optional */
+    }
   }
 
   exitLock(): void {
