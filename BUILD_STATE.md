@@ -571,3 +571,16 @@ instruction.
       authority split is written down as a table in the player's language (who
       owns the hostiles, who owns your hit, who owns where you are standing),
       since it is the thing that explains why co-op feels identical to solo.
+- [x] **`README.md` + `LICENSE` (MIT).** Leads with `shots/02_combat.png` and
+      `shots/run.gif`, and says where they come from: both are produced BY the
+      harness (the still is one of seven captured every run, the clip is the same
+      competent-player bot the difficulty was measured with), so the README and
+      the build cannot drift apart. Quickstart covers solo and co-op; the
+      measurements table is the M3/M4 numbers as the harness printed them —
+      85/85, 16.67 ms locked 60, GTAO 18.9-22.8 ms (why AO ships off), optic
+      0.00 px, coverage 5.77/8.14% against a 15% budget, 1600 enclosure rays /
+      0 leaks, 0 doctrine violations, 59.4% win rate with its CI, interpolation
+      2.23-2.53x, 861 kB / 252 kB gzip. Credits: **Tripo** for the generated
+      models (linked), the six clips as **CC0 from Mesh2Motion** with the link
+      and its 66-joint skeleton named, Poly Haven for the sky, and the explicit
+      note that textures are baked and audio is synthesised — nothing sampled.
