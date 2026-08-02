@@ -564,3 +564,10 @@ instruction.
       code path. The 40.28 ms reading was the box (load 7.4, browser pinned at
       90% CPU, SwiftShader), and it was waited out rather than tolerated. The
       assertion was never touched.
+- [x] **`HOW_TO_PLAY.md`.** Server start, the room-code flow, the full controls
+      and settings tables, and an explicit *"the single-player game works with
+      the server switched off"* section — because that is the M4 design rule and
+      a player should be able to read it, not just a reviewer of `src/net/`. The
+      authority split is written down as a table in the player's language (who
+      owns the hostiles, who owns your hit, who owns where you are standing),
+      since it is the thing that explains why co-op feels identical to solo.
